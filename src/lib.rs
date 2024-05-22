@@ -14,8 +14,8 @@ pub mod world;
 // -Fix the crate imports
 
 // To Do
-// -Create TypeMap
-// -Add Component Storage
+// -Add Component Storage / Entities
+// -Add tests for using bundles with Component Storage
 // -Add Resource Storage
 // -Add Bundle
 // -Add Query

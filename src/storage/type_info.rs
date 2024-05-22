@@ -1,6 +1,11 @@
 use crate::errors::TypeInfoErrors;
 use eyre::Result;
-use std::{alloc::Layout, any::TypeId, hash::Hash};
+use std::{
+  alloc::Layout,
+  any::TypeId,
+  cmp::Ordering,
+  hash::{Hash, Hasher}
+};
 
 // Refactor:
 // -Could replace the array implementation
@@ -29,7 +34,7 @@ impl TypeInfo {
       x.cast::<T>().drop_in_place()
     }
 
-    Self {
+    TypeInfo {
       id:TypeId::of::<T>(),
       layout:Layout::new::<T>(),
       drop:drop_ptr::<T>,
@@ -106,14 +111,14 @@ impl TypeInfo {
 }
 
 impl PartialOrd for TypeInfo {
-  fn partial_cmp(&self, other:&Self) -> Option<core::cmp::Ordering> {
+  fn partial_cmp(&self, other:&Self) -> Option<Ordering> {
     Some(self.cmp(other))
   }
 }
 
 impl Ord for TypeInfo {
   /// Order by alignment, descending. Ties broken with TypeId.
-  fn cmp(&self, other:&Self) -> core::cmp::Ordering {
+  fn cmp(&self, other:&Self) -> Ordering {
     self
       .layout
       .align()
@@ -130,7 +135,7 @@ impl PartialEq for TypeInfo {
 }
 
 impl Hash for TypeInfo {
-  fn hash<H:std::hash::Hasher>(&self, state:&mut H) {
+  fn hash<H:Hasher>(&self, state:&mut H) {
     self.id.hash(state);
   }
 }

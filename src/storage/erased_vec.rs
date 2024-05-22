@@ -1,10 +1,7 @@
 use crate::errors::ErasedVecErrors::{DoesNotContainType, ErasedVecAllocError, ErasedVecCapacityOverflow, IncorrectTypeInsertion, IndexOutOfBounds};
 use std::{
   alloc,
-  marker::PhantomData,
-  ops::{Deref, DerefMut},
-  ptr::{self, NonNull},
-  slice
+  ptr::{self, NonNull}
 };
 
 use super::type_info::TypeInfo;
@@ -17,25 +14,19 @@ use super::type_info::TypeInfo;
 // -Drop can use the generic
 // -Might need to add explict drop logic in pushing/insertion?
 
-struct RawErasedVec<T> {
+struct RawErasedVec {
   ptr:NonNull<u8>,
   cap:usize,
-  ty:TypeInfo,
-  _data:PhantomData<T>
+  ty:TypeInfo
 }
 
-impl<T:'static + Send + Sync> RawErasedVec<T> {
-  fn new() -> Self {
+impl RawErasedVec {
+  fn new<T:'static + Send + Sync>() -> Self {
     let ty = TypeInfo::of::<T>();
     let cap = if ty.size() == 0 { usize::MAX } else { 0 };
     let ptr = NonNull::new(ty.size() as *mut u8).unwrap();
 
-    RawErasedVec {
-      ptr,
-      cap,
-      ty,
-      _data:PhantomData
-    }
+    RawErasedVec { ptr, cap, ty }
   }
 
   fn grow(&mut self) {
@@ -82,18 +73,18 @@ impl<T:'static + Send + Sync> RawErasedVec<T> {
 // }
 
 ///A type erased vector used for storing data in the ECS.
-pub struct ErasedVec<T> {
-  buf:RawErasedVec<T>,
+pub struct ErasedVec {
+  buf:RawErasedVec,
   len:usize
 }
 
-impl<T:'static + Send + Sync> ErasedVec<T> {
+impl ErasedVec {
   ///Constructs a new, empty [`ErasedVec<T>`].
   ///
   ///The vector will not allocate until elements are pushed onto it.
-  pub fn new() -> Self {
+  pub fn new<T:'static + Send + Sync>() -> Self {
     ErasedVec {
-      buf:RawErasedVec::new(),
+      buf:RawErasedVec::new::<T>(),
       len:0
     }
   }
@@ -110,8 +101,50 @@ impl<T:'static + Send + Sync> ErasedVec<T> {
     self.buf.cap
   }
 
+  ///Fetch data from the [`ErasedVec`] by index.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the [`TypeInfo`] of the value does not match the type contained
+  /// in the `ErasedVec`.
+  ///
+  /// Panics if `index` > `self.len`
+  pub fn get<T:'static + Send + Sync>(&self, index:usize) -> &T {
+    // Confirm the vector contains `T`
+    self.assert_type_info_insert(TypeInfo::of::<T>());
+
+    // Confirm the index is in bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+
+    // Get a pointer the data and cast it to `&T`
+    let start = index * self.ty().size();
+    unsafe { &*(self.ptr().add(start) as *const T) }
+  }
+
+  ///Fetch data mutably from the [`ErasedVec`] by index.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the [`TypeInfo`] of the value does not match the type contained
+  /// in the `ErasedVec`.
+  ///
+  /// Panics if `index` > `self.len`
+  pub fn get_mut<T:'static + Send + Sync>(&self, index:usize) -> &mut T {
+    // Confirm the vector contains `T`
+    self.assert_type_info_insert(TypeInfo::of::<T>());
+
+    // Confirm the index is in bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+
+    // Get a pointer the data and cast it to `&mut T`
+    let start = index * self.ty().size();
+    unsafe { &mut *(self.ptr().add(start) as *mut T) }
+  }
+
   ///Append a value to the back of the [`ErasedVec`].
-  pub fn push(&mut self, value:T) {
+  pub fn push<T:'static + Send + Sync>(&mut self, value:T) {
+    self.assert_type_info_insert(TypeInfo::of::<T>());
+
     // Grow the Vec if it is at max capacity
     if self.len == self.cap() {
       self.buf.grow()
@@ -158,7 +191,9 @@ impl<T:'static + Send + Sync> ErasedVec<T> {
   /// # Panics
   ///
   /// Panics if `index > len`.
-  pub fn insert(&mut self, index:usize, value:T) {
+  pub fn insert<T:'static + Send + Sync>(&mut self, index:usize, value:T) {
+    self.assert_type_info_insert(TypeInfo::of::<T>());
+
     // Check whether the index is within bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
     if self.len == self.cap() {
@@ -248,27 +283,26 @@ impl<T:'static + Send + Sync> ErasedVec<T> {
 //   }
 // }
 
-impl<T:'static + Send + Sync> Deref for ErasedVec<T> {
-  type Target = [T];
+// impl<T:'static + Send + Sync> Deref for ErasedVec<T> {
+//   type Target = [T];
 
-  fn deref(&self) -> &Self::Target {
-    let len = self.len * self.ty().size();
-    unsafe { slice::from_raw_parts(self.ptr() as *mut T, len) }
-  }
-}
+//   fn deref(&self) -> &Self::Target {
+//     let len = self.len * self.ty().size();
+//     unsafe { slice::from_raw_parts(self.ptr() as *mut T, len) }
+//   }
+// }
 
-impl<T:'static + Send + Sync> DerefMut for ErasedVec<T> {
-  fn deref_mut(&mut self) -> &mut [T] {
-    let len = self.len * self.ty().size();
-    unsafe { slice::from_raw_parts_mut(self.ptr() as *mut T, len) }
-  }
-}
+// impl<T:'static + Send + Sync> DerefMut for ErasedVec<T> {
+//   fn deref_mut(&mut self) -> &mut [T] {
+//     let len = self.len * self.ty().size();
+//     unsafe { slice::from_raw_parts_mut(self.ptr() as *mut T, len) }
+//   }
+// }
 
 #[cfg(test)]
 mod test {
-  use crate::storage::type_info::TypeInfo;
-
   use super::ErasedVec;
+  use crate::storage::type_info::TypeInfo;
 
   #[test]
   fn push_into_and_read() {
@@ -276,7 +310,7 @@ mod test {
     let health_2 = Health::new(5483392);
     let health_3 = Health::new(25);
 
-    let mut heath_vec = ErasedVec::new();
+    let mut heath_vec = ErasedVec::new::<Health>();
     heath_vec.push(health_1);
     heath_vec.push(health_2);
     heath_vec.push(health_3);
@@ -284,7 +318,7 @@ mod test {
     //Checking pushing normally works
     pull_and_check(&heath_vec);
     pull_and_mut(&mut heath_vec);
-    let health_3 = heath_vec[2].min;
+    let health_3 = heath_vec.get::<Health>(2).min;
     assert_eq!(health_3, 6);
 
     let ty = TypeInfo::of::<Health>();
@@ -292,7 +326,7 @@ mod test {
     let mut health_2 = Health::new(5483392);
     let mut health_3 = Health::new(25);
 
-    let mut heath_vec:ErasedVec<Health> = ErasedVec::new();
+    let mut heath_vec = ErasedVec::new::<Health>();
     heath_vec.push_erased((&mut health_1 as *mut Health).cast::<u8>(), ty);
     heath_vec.push_erased((&mut health_2 as *mut Health).cast::<u8>(), ty);
     heath_vec.push_erased((&mut health_3 as *mut Health).cast::<u8>(), ty);
@@ -300,44 +334,44 @@ mod test {
     //Checking pushing erased normally works
     pull_and_check(&heath_vec);
     pull_and_mut(&mut heath_vec);
-    let health_3 = heath_vec[2].min;
+    let health_3 = heath_vec.get::<Health>(2).min;
     assert_eq!(health_3, 6);
 
-    fn pull_and_check(vec:&ErasedVec<Health>) {
-      let retrieved_health = vec[0];
-      let retrieved_health_2 = vec[1];
-      let retrieved_health_3 = vec[2];
+    fn pull_and_check(vec:&ErasedVec) {
+      let retrieved_health = vec.get::<Health>(0);
+      let retrieved_health_2 = vec.get::<Health>(1);
+      let retrieved_health_3 = vec.get::<Health>(2);
 
       assert_eq!(retrieved_health.max, 100);
       assert_eq!(retrieved_health_2.max, 5483392);
       assert_eq!(retrieved_health_3.max, 25);
     }
 
-    fn pull_and_mut(vec:&mut ErasedVec<Health>) {
-      vec[2].min = 6;
+    fn pull_and_mut(vec:&mut ErasedVec) {
+      vec.get_mut::<Health>(2).min = 6;
     }
   }
 
   #[test]
   fn push_zst_into_and_read() {
-    let mut player_vec:ErasedVec<Option<Player>> = ErasedVec::new();
+    let mut player_vec = ErasedVec::new::<Option<Player>>();
     player_vec.push(Some(Player));
     player_vec.push(Some(Player));
-    player_vec.push(None);
+    player_vec.push::<Option<Player>>(None);
     player_vec.push(Some(Player));
-    player_vec.push(None);
-    player_vec.push(None);
+    player_vec.push::<Option<Player>>(None);
+    player_vec.push::<Option<Player>>(None);
 
     //Confirm pushing normally works
-    assert_eq!(player_vec.len(), 6);
-    assert_eq!(player_vec[0], Some(Player));
-    assert_eq!(player_vec[1], Some(Player));
-    assert_eq!(player_vec[2], None);
-    assert_eq!(player_vec[3], Some(Player));
-    assert_eq!(player_vec[4], None);
-    assert_eq!(player_vec[5], None);
+    assert_eq!(player_vec.len, 6);
+    assert_eq!(*player_vec.get::<Option<Player>>(0), Some(Player));
+    assert_eq!(*player_vec.get::<Option<Player>>(1), Some(Player));
+    assert_eq!(*player_vec.get::<Option<Player>>(2), None);
+    assert_eq!(*player_vec.get::<Option<Player>>(3), Some(Player));
+    assert_eq!(*player_vec.get::<Option<Player>>(4), None);
+    assert_eq!(*player_vec.get::<Option<Player>>(5), None);
 
-    let mut player_vec:ErasedVec<Option<Player>> = ErasedVec::new();
+    let mut player_vec = ErasedVec::new::<Option<Player>>();
     let ty:TypeInfo = TypeInfo::of::<Option<Player>>();
     player_vec.push_erased((&mut Some(Player) as *mut Option<Player>).cast::<u8>(), ty);
     player_vec.push_erased((&mut Some(Player) as *mut Option<Player>).cast::<u8>(), ty);
@@ -347,19 +381,20 @@ mod test {
     player_vec.push_erased((&mut None as *mut Option<Player>).cast::<u8>(), ty);
 
     //Confirm pushing erased works
-    assert_eq!(player_vec.len(), 6);
-    assert_eq!(player_vec[0], Some(Player));
-    assert_eq!(player_vec[1], Some(Player));
-    assert_eq!(player_vec[2], None);
-    assert_eq!(player_vec[3], Some(Player));
-    assert_eq!(player_vec[4], None);
-    assert_eq!(player_vec[5], None);
+    assert_eq!(player_vec.len, 6);
+    assert_eq!(player_vec.len, 6);
+    assert_eq!(*player_vec.get::<Option<Player>>(0), Some(Player));
+    assert_eq!(*player_vec.get::<Option<Player>>(1), Some(Player));
+    assert_eq!(*player_vec.get::<Option<Player>>(2), None);
+    assert_eq!(*player_vec.get::<Option<Player>>(3), Some(Player));
+    assert_eq!(*player_vec.get::<Option<Player>>(4), None);
+    assert_eq!(*player_vec.get::<Option<Player>>(5), None);
   }
 
   #[test]
   fn push_collection_into_and_read() {
     //Check pushing normally works
-    let mut path_vec:ErasedVec<Path> = ErasedVec::new();
+    let mut path_vec = ErasedVec::new::<Path>();
     let path_1 = Path::new(vec![[0.0, 9222.444], [3.432, 5933.9999999], [3.484, 19444.333]]);
     let path_2 = Path::new(vec![[222222.22222, 5933.9999999]]);
     let path_3 = Path::new(Vec::default());
@@ -368,16 +403,16 @@ mod test {
     path_vec.push(path_2);
     path_vec.push(path_3);
 
-    let retrieved_path_1 = &path_vec[0];
+    let retrieved_path_1 = path_vec.get::<Path>(0);
     assert_eq!(retrieved_path_1.steps[0][0], 0.0);
     assert_eq!(retrieved_path_1.steps[1][0], 3.432);
 
-    let retrieved_path_2 = &path_vec[1];
+    let retrieved_path_2 = path_vec.get::<Path>(1);
     assert_eq!(retrieved_path_2.steps[0][0], 222222.22222);
     assert_eq!(retrieved_path_2.steps[0][1], 5933.9999999);
 
     //Check pushing erased works
-    let mut path_vec:ErasedVec<Path> = ErasedVec::new();
+    let mut path_vec = ErasedVec::new::<Path>();
     let mut path_1 = Path::new(vec![[0.0, 9222.444], [3.432, 5933.9999999], [3.484, 19444.333]]);
     let mut path_2 = Path::new(vec![[222222.22222, 5933.9999999]]);
     let mut path_3 = Path::new(Vec::default());
@@ -387,18 +422,18 @@ mod test {
     path_vec.push_erased((&mut path_2 as *mut Path).cast::<u8>(), ty);
     path_vec.push_erased((&mut path_3 as *mut Path).cast::<u8>(), ty);
 
-    let retrieved_path_1 = &path_vec[0];
+    let retrieved_path_1 = path_vec.get::<Path>(0);
     assert_eq!(retrieved_path_1.steps[0][0], 0.0);
     assert_eq!(retrieved_path_1.steps[1][0], 3.432);
 
-    let retrieved_path_2 = &path_vec[1];
+    let retrieved_path_2 = path_vec.get::<Path>(1);
     assert_eq!(retrieved_path_2.steps[0][0], 222222.22222);
     assert_eq!(retrieved_path_2.steps[0][1], 5933.9999999);
   }
 
   #[test]
   fn inserting_into_works() {
-    let mut health_vec:ErasedVec<Health> = ErasedVec::new();
+    let mut health_vec = ErasedVec::new::<Health>();
     let health_1 = Health::new(100);
     let health_2 = Health::new(5483392);
     let health_3 = Health::new(25);
@@ -410,12 +445,12 @@ mod test {
 
     //Insert normally and c heck the values
     health_vec.insert(1, health_4);
-    assert_eq!(health_vec[0].min, health_1.min);
-    assert_eq!(health_vec[1].min, health_4.min);
-    assert_eq!(health_vec[2].min, health_2.min);
-    assert_eq!(health_vec[3].min, health_3.min);
+    assert_eq!(health_vec.get::<Health>(0).min, health_1.min);
+    assert_eq!(health_vec.get::<Health>(1).min, health_4.min);
+    assert_eq!(health_vec.get::<Health>(2).min, health_2.min);
+    assert_eq!(health_vec.get::<Health>(3).min, health_3.min);
 
-    let mut health_vec:ErasedVec<Health> = ErasedVec::new();
+    let mut health_vec = ErasedVec::new::<Health>();
     let health_1 = Health::new(100);
     let health_2 = Health::new(5483392);
     let health_3 = Health::new(25);
@@ -427,10 +462,10 @@ mod test {
 
     //Insert erased and c heck the values
     health_vec.insert_erased((&mut health_4 as *mut Health).cast::<u8>(), TypeInfo::of::<Health>(), 1);
-    assert_eq!(health_vec[0].min, health_1.min);
-    assert_eq!(health_vec[1].min, health_4.min);
-    assert_eq!(health_vec[2].min, health_2.min);
-    assert_eq!(health_vec[3].min, health_3.min);
+    assert_eq!(health_vec.get::<Health>(0).min, health_1.min);
+    assert_eq!(health_vec.get::<Health>(1).min, health_4.min);
+    assert_eq!(health_vec.get::<Health>(2).min, health_2.min);
+    assert_eq!(health_vec.get::<Health>(3).min, health_3.min);
   }
 
   #[derive(Debug, PartialEq, PartialOrd)]
