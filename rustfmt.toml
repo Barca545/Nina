@@ -1,0 +1,31 @@
+#Run using `cargo +nightly fmt`
+
+unstable_features = true
+
+#LINE SPACING
+tab_spaces = 2
+space_after_colon = false
+space_before_colon = false
+
+#DENSITY
+fn_params_layout = "Compressed"
+use_field_init_shorthand = true
+brace_style = "PreferSameLine"
+type_punctuation_density = "Wide"
+
+#MISCELLANEOUS
+trailing_comma = "Never"
+match_arm_blocks = true
+trailing_semicolon = true
+where_single_line = true
+
+#WRAPPING
+max_width = 150
+wrap_comments = true
+binop_separator = "Front"
+
+#IMPORTING
+#reorder_modules
+#imports_granularity
+#group_imports
+
