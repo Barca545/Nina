@@ -1,18 +1,18 @@
+use super::type_info::TypeInfo;
 use crate::errors::ErasedVecErrors::{DoesNotContainType, ErasedVecAllocError, ErasedVecCapacityOverflow, IncorrectTypeInsertion, IndexOutOfBounds};
 use std::{
   alloc,
   ptr::{self, NonNull}
 };
 
-use super::type_info::TypeInfo;
-
 // Refactor:
 // -No `pop` method. Unsure it is needed.
 // -No `remove` method. Unsure it is needed.
 // -Rework the typed insert and pushes
 // -I don't think Drop needs to drop each element individually
-// -Drop can use the generic
 // -Might need to add explict drop logic in pushing/insertion?
+// -Rename this collections
+// -Impl Drop for ErasedBox
 
 struct RawErasedVec {
   ptr:NonNull<u8>,
@@ -28,8 +28,7 @@ impl RawErasedVec {
 
     RawErasedVec { ptr, cap, ty }
   }
-
-  fn grow(&mut self) {
+  fn grow_exact(&mut self, cap:usize) {
     // since we set the capacity to usize::MAX when `ty` has size 0,
     // getting to here necessarily means the Vec is overfull.
     assert!(self.ty.size() != 0, "{ErasedVecCapacityOverflow}");
@@ -37,7 +36,7 @@ impl RawErasedVec {
     let (new_cap, new_layout) = if self.cap == 0 {
       (1, self.ty.array(1).unwrap())
     } else {
-      let new_cap = 2 * self.cap;
+      let new_cap = cap;
       let new_layout = self.ty.array(new_cap).unwrap();
       (new_cap, new_layout)
     };
@@ -60,6 +59,10 @@ impl RawErasedVec {
     };
 
     self.cap = new_cap;
+  }
+
+  fn grow(&mut self) {
+    self.grow_exact(2 * self.cap);
   }
 }
 
@@ -101,6 +104,12 @@ impl ErasedVec {
     self.buf.cap
   }
 
+  ///Returns the number of elements in the vector, also referred to as its
+  /// ‘length’.
+  pub fn len(&self) -> usize {
+    self.len
+  }
+
   ///Fetch data from the [`ErasedVec`] by index.
   ///
   /// # Panics
@@ -108,11 +117,29 @@ impl ErasedVec {
   /// Panics if the [`TypeInfo`] of the value does not match the type contained
   /// in the `ErasedVec`.
   ///
-  /// Panics if `index` > `self.len`
+  /// Panics if `index` > `self.len`.
   pub fn get<T:'static + Send + Sync>(&self, index:usize) -> &T {
     // Confirm the vector contains `T`
-    self.assert_type_info_insert(TypeInfo::of::<T>());
+    self.assert_type_info(TypeInfo::of::<T>());
 
+    // Confirm the index is in bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+
+    // Get a pointer the data and cast it to `&T`
+    let start = index * self.ty().size();
+    unsafe { &*(self.ptr().add(start) as *const T) }
+  }
+
+  ///Fetch data from the [`ErasedVec`] by index.
+  ///
+  /// # Warning
+  ///
+  /// Does not check whether the `ErasedVec` contains the requested type `T`.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `index` > `self.len`.
+  pub fn get_unchecked<T:'static + Send + Sync>(&self, index:usize) -> &T {
     // Confirm the index is in bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
 
@@ -128,10 +155,10 @@ impl ErasedVec {
   /// Panics if the [`TypeInfo`] of the value does not match the type contained
   /// in the `ErasedVec`.
   ///
-  /// Panics if `index` > `self.len`
+  /// Panics if `index` > `self.len`.
   pub fn get_mut<T:'static + Send + Sync>(&self, index:usize) -> &mut T {
     // Confirm the vector contains `T`
-    self.assert_type_info_insert(TypeInfo::of::<T>());
+    self.assert_type_info(TypeInfo::of::<T>());
 
     // Confirm the index is in bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
@@ -139,6 +166,21 @@ impl ErasedVec {
     // Get a pointer the data and cast it to `&mut T`
     let start = index * self.ty().size();
     unsafe { &mut *(self.ptr().add(start) as *mut T) }
+  }
+
+  ///Pushes a value semantically equivelent to `None<T>` into the
+  /// [`ErasedVec`].
+  ///
+  /// # Warning
+  ///
+  /// Data is padded with 0s, attempting to access it before it is overwritten
+  /// with a value of type `T` will cause undefined behavior.
+  pub fn pad(&mut self) {
+    let mut padding:Vec<u8> = Vec::new();
+    padding.resize(self.ty().size(), 0);
+    let padding = padding.as_mut_ptr();
+
+    self.push_erased(padding, self.ty())
   }
 
   ///Append a value to the back of the [`ErasedVec`].
@@ -208,7 +250,7 @@ impl ErasedVec {
 
       // Copy the value as raw bits into the `ErasedVec`
       let val_ptr = (&value as *const T).cast::<u8>();
-      ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().layout().size());
+      ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().size());
     }
 
     self.len += 1;
@@ -238,7 +280,7 @@ impl ErasedVec {
       ptr::copy(self.ptr().add(start_offset), self.ptr().add(end_offset), count);
 
       // Copy the value as raw bits into the `ErasedVec`
-      ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().layout().size());
+      ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().size());
     }
 
     self.len += 1;
@@ -256,6 +298,71 @@ impl ErasedVec {
         vec_type:self.ty().name()
       }
     );
+  }
+
+  ///Panics if the queried [`TypeInfo`] is not the same as the data the
+  /// [`ErasedVec`] holds.
+  fn assert_type_info(&self, ty:TypeInfo) {
+    assert_eq!(ty, self.ty(), "{}", DoesNotContainType(ty.name()));
+  }
+}
+
+pub struct ErasedBox(RawErasedVec);
+
+impl ErasedBox {
+  pub fn new<T:'static + Send + Sync>(val:T) -> Self {
+    // Create the buf
+    let mut buf = RawErasedVec::new::<T>();
+    buf.grow_exact(1);
+
+    // Allocate space in the buf and insert the data into it
+    unsafe {
+      // Copy the value as raw bits into the `RawErasedVec` buf
+      let val_ptr = (&val as *const T).cast::<u8>();
+      ptr::copy_nonoverlapping(val_ptr, buf.ptr.as_ptr(), buf.ty.size());
+    }
+
+    ErasedBox(buf)
+  }
+
+  fn ptr(&self) -> *mut u8 {
+    self.0.ptr.as_ptr()
+  }
+
+  fn ty(&self) -> TypeInfo {
+    self.0.ty
+  }
+
+  ///Fetch [`ErasedBox`]'s data.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the [`TypeInfo`] of the value does not match the type contained
+  /// in the `ErasedVec`.
+  ///
+  /// Panics if `index` > `self.len`
+  pub fn get<T:'static + Send + Sync>(&self) -> &T {
+    // Confirm the vector contains `T`
+    self.assert_type_info(TypeInfo::of::<T>());
+
+    // Get a pointer the data and cast it to `&T`;
+    unsafe { &*(self.ptr() as *const T) }
+  }
+
+  ///Fetch [`ErasedBox`]'s data mutably.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the [`TypeInfo`] of the value does not match the type contained
+  /// in the `ErasedVec`.
+  ///
+  /// Panics if `index` > `self.len`
+  pub fn get_mut<T:'static + Send + Sync>(&self) -> &mut T {
+    // Confirm the vector contains `T`
+    self.assert_type_info(TypeInfo::of::<T>());
+
+    // Get a pointer the data and cast it to `&mut T`
+    unsafe { &mut *(self.ptr() as *mut T) }
   }
 
   ///Panics if the queried [`TypeInfo`] is not the same as the data the
@@ -466,6 +573,17 @@ mod test {
     assert_eq!(health_vec.get::<Health>(1).min, health_4.min);
     assert_eq!(health_vec.get::<Health>(2).min, health_2.min);
     assert_eq!(health_vec.get::<Health>(3).min, health_3.min);
+  }
+
+  #[test]
+  fn padding_works() {
+    let mut vec = ErasedVec::new::<Health>();
+    vec.pad();
+    vec.push(Health::new(400));
+    let data = vec.get_unchecked::<[u8; 8]>(0);
+    assert_eq!(&[0; 8], data);
+    let health = vec.get::<Health>(1);
+    assert_eq!(health.max, 400);
   }
 
   #[derive(Debug, PartialEq, PartialOrd)]

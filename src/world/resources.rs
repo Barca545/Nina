@@ -1,6 +1,6 @@
 use crate::{
   errors::EcsErrors,
-  storage::{erased_vec::ErasedVec, type_info::TypeInfo, type_map::TypeMap, EcsData}
+  storage::{erased_vec::ErasedBox, type_info::TypeInfo, type_map::TypeMap, EcsData}
 };
 use std::cell::{Ref, RefCell, RefMut};
 
@@ -8,14 +8,13 @@ use std::cell::{Ref, RefCell, RefMut};
 /// game world.
 #[derive(Default)]
 pub struct Resources {
-  data:RefCell<TypeMap<ErasedVec>>
+  data:RefCell<TypeMap<ErasedBox>>
 }
 
 impl Resources {
-  pub fn add_resource<T:EcsData>(&mut self, data:T) {
+  pub fn add_resource<T:EcsData>(&self, data:T) {
     let ty = TypeInfo::of::<T>();
-    let mut data_vec = ErasedVec::new::<T>();
-    data_vec.push(data);
+    let data_vec = ErasedBox::new::<T>(data);
     self.data.borrow_mut().insert(ty, data_vec);
   }
 
@@ -30,7 +29,7 @@ impl Resources {
           component:ty.name().to_string()
         })
         .unwrap();
-      data.get::<T>(0)
+      data.get::<T>()
     })
   }
 
@@ -45,7 +44,7 @@ impl Resources {
           component:ty.name().to_string()
         })
         .unwrap();
-      data.get_mut::<T>(0)
+      data.get_mut::<T>()
     })
   }
 
@@ -64,7 +63,7 @@ mod tests {
     let resources:Resources = init_resource();
     let binding = resources.data.borrow();
     let stored_resource = binding.get(&TypeInfo::of::<WorldWidth>()).unwrap();
-    let extracted_world_width = stored_resource.get::<WorldWidth>(0);
+    let extracted_world_width = stored_resource.get::<WorldWidth>();
     assert_eq!(extracted_world_width.0, 100.0)
   }
 
@@ -97,7 +96,7 @@ mod tests {
   }
 
   fn init_resource() -> Resources {
-    let mut resources:Resources = Resources::default();
+    let resources:Resources = Resources::default();
     let world_width:WorldWidth = WorldWidth(100.0);
 
     resources.add_resource(world_width);

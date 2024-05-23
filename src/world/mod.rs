@@ -1,20 +1,26 @@
-use self::{entities::Entities, resources::Resources};
-use crate::storage::EcsData;
-use std::cell::{Ref, RefMut};
+use self::{
+  entities::{Entities, Entity},
+  resources::Resources
+};
+use crate::storage::{bundle::Bundle, EcsData};
+use std::cell::{Ref, RefCell, RefMut};
 
 mod entities;
+mod query;
 mod resources;
 
 //World must have mutation through &World
 // Refactor:
 // -Make a tests module
+// -Make it so add_components panics if a component is unregistered
 
 #[derive(Default)]
 pub struct World {
   resources:Resources,
-  entities:Entities
+  entities:RefCell<Entities>
 }
 
+//Resource Implementation
 impl World {
   ///Generates an empty [`World`].
   pub fn new() -> Self {
@@ -22,7 +28,7 @@ impl World {
   }
 
   ///Add a new resource to the world.
-  pub fn add_resource(&mut self, data:impl EcsData) -> &mut Self {
+  pub fn add_resource(&self, data:impl EcsData) -> &Self {
     self.resources.add_resource(data);
     self
   }
@@ -51,5 +57,66 @@ impl World {
   }
 }
 
+//Entity/Components Implementation
+impl World {
+  ///Updates the Entities to include components of type `T`.
+  pub fn register_component<T:EcsData>(&self) -> &Self {
+    self.entities.borrow_mut().register_component::<T>();
+    self
+  }
+
+  /**
+  Creates a new entity adds it to the entities list. Iterates over the
+  registered components and initializes them with 'None'. Sets the bitmap
+  for the entity to 0 indicating it has no components associated with it.
+
+  # Example
+  ```
+  use nina::world::World;
+
+  let world = World::new();
+  world.create_entity()l
+  ```
+  */
+  pub fn create_entity(&self) -> &Self {
+    todo!()
+  }
+
+  /// Add a component of type `T` to the entity at `inserting_into_index`.
+  ///
+  /// Updates the entity's bitmap.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `T` has not been registered.
+  pub fn with_component() {}
+
+  /// Add a [`Bundle`] of components to the entity at `inserting_into_index`.
+  ///
+  /// Updates the entity's bitmap.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `T` has not been registered.
+  pub fn with_components() {}
+
+  ///Add a component to the provided entity.
+  pub fn add_component(entity:Entity) {}
+
+  ///Add a [`Bundle`] of components to the provided entity.
+  ///
+  /// # Warning
+  ///
+  /// Does not error if component is unregistered but operation will fail.
+  pub fn add_components(entity:Entity, components:impl Bundle) {}
+
+  ///Deletes an entity from the entities list matching the index.
+  /// Leaves the slot open -- the next entity added will overwrite the emptied
+  /// slot.
+  pub fn delete_entity() {}
+}
+
 #[cfg(test)]
-mod tests {}
+mod tests {
+  //test for registering multiple components
+}

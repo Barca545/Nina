@@ -34,9 +34,11 @@ impl TypeInfo {
       x.cast::<T>().drop_in_place()
     }
 
+    let layout = Layout::new::<T>();
+
     TypeInfo {
       id:TypeId::of::<T>(),
-      layout:Layout::new::<T>(),
+      layout,
       drop:drop_ptr::<T>,
       #[cfg(debug_assertions)]
       type_name:core::any::type_name::<T>()
