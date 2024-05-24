@@ -139,7 +139,7 @@ impl ErasedVec {
   /// # Panics
   ///
   /// Panics if `index` > `self.len`.
-  pub fn get_unchecked<T:'static + Send + Sync>(&self, index:usize) -> &T {
+  pub unsafe fn get_unchecked<T:'static + Send + Sync>(&self, index:usize) -> &T {
     // Confirm the index is in bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
 
@@ -164,6 +164,24 @@ impl ErasedVec {
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
 
     // Get a pointer the data and cast it to `&mut T`
+    let start = index * self.ty().size();
+    unsafe { &mut *(self.ptr().add(start) as *mut T) }
+  }
+
+  ///Fetch data mutably sfrom the [`ErasedVec`] by index.
+  ///
+  /// # Warning
+  ///
+  /// Does not check whether the `ErasedVec` contains the requested type `T`.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `index` > `self.len`.
+  pub unsafe fn get_mut_unchecked<T:'static + Send + Sync>(&self, index:usize) -> &mut T {
+    // Confirm the index is in bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+
+    // Get a pointer the data and cast it to `&T`
     let start = index * self.ty().size();
     unsafe { &mut *(self.ptr().add(start) as *mut T) }
   }
@@ -265,11 +283,12 @@ impl ErasedVec {
   ///
   /// Panics if `ty` != `self.ty()`
   pub fn insert_erased(&mut self, val_ptr:*mut u8, ty:TypeInfo, index:usize) {
-    // Check whether the index is within bounds
-    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
     if self.len == self.cap() {
       self.buf.grow()
     }
+
+    // Check whether the index is within bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
 
     self.assert_type_info_insert(ty);
 
@@ -580,7 +599,7 @@ mod test {
     let mut vec = ErasedVec::new::<Health>();
     vec.pad();
     vec.push(Health::new(400));
-    let data = vec.get_unchecked::<[u8; 8]>(0);
+    let data = unsafe { vec.get_unchecked::<[u8; 8]>(0) };
     assert_eq!(&[0; 8], data);
     let health = vec.get::<Health>(1);
     assert_eq!(health.max, 400);

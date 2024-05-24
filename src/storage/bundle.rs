@@ -1,26 +1,28 @@
 use super::type_info::TypeInfo;
 use super::EcsData;
+use eyre::Result;
 use std::mem;
 
 pub trait Bundle {
   ///Takes a callback that moves components out of the bundle one-by-one.
-  unsafe fn put(self, f:impl FnMut(*mut u8, TypeInfo));
+  unsafe fn put(self, f:impl FnMut(*mut u8, TypeInfo) -> Result<()>) -> Result<()>;
 }
 
 macro_rules! impl_tuple {
   ($($name:ident),*) => {
     impl<$($name:EcsData),*> Bundle for ($($name,)*) {
       #[allow(unused_variables, unused_mut)]
-      unsafe fn put(self, mut f: impl FnMut(*mut u8, TypeInfo)) {
+      unsafe fn put(self, mut f: impl FnMut(*mut u8, TypeInfo) -> Result<()>) -> Result<()>{
         #[allow(non_snake_case)]
         let ($(mut $name,)*) = self;
         $(
           f(
             (&mut $name as *mut $name).cast::<u8>(),
             TypeInfo::of::<$name>(),
-          );
+          )?;
           mem::forget($name);
         )*
+        Ok(())
       }
     }
   };

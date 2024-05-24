@@ -2,7 +2,8 @@ use self::{
   entities::{Entities, Entity},
   resources::Resources
 };
-use crate::storage::{bundle::Bundle, EcsData};
+use crate::storage::{bundle::Bundle, type_info::TypeInfo, EcsData};
+use eyre::Result;
 use std::cell::{Ref, RefCell, RefMut};
 
 mod entities;
@@ -13,6 +14,9 @@ mod resources;
 // Refactor:
 // -Make a tests module
 // -Make it so add_components panics if a component is unregistered
+// -Move the big doctest example to the top of the module documentation
+//  Update it to test for querying
+// -Update `World` to `WorldInner` and have `World` be `Rc<WorldInner>`.
 
 #[derive(Default)]
 pub struct World {
@@ -59,27 +63,20 @@ impl World {
 
 //Entity/Components Implementation
 impl World {
-  ///Updates the Entities to include components of type `T`.
+  /// Register type `T` as a component type.
+  ///
+  /// All types must be registered before they can be used as components.
   pub fn register_component<T:EcsData>(&self) -> &Self {
     self.entities.borrow_mut().register_component::<T>();
     self
   }
 
-  /**
-  Creates a new entity adds it to the entities list. Iterates over the
-  registered components and initializes them with 'None'. Sets the bitmap
-  for the entity to 0 indicating it has no components associated with it.
-
-  # Example
-  ```
-  use nina::world::World;
-
-  let world = World::new();
-  world.create_entity()l
-  ```
-  */
+  /// Prepares the ECS for the insertion of data into a new `Entity`.
+  ///
+  /// The entity is initalized without any associated components.
   pub fn create_entity(&self) -> &Self {
-    todo!()
+    self.entities.borrow_mut().create_entity();
+    self
   }
 
   /// Add a component of type `T` to the entity at `inserting_into_index`.
@@ -89,7 +86,10 @@ impl World {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_component() {}
+  pub fn with_component<T:EcsData>(&self, data:T) -> Result<&Self> {
+    self.entities.borrow_mut().with_component(data).unwrap();
+    Ok(self)
+  }
 
   /// Add a [`Bundle`] of components to the entity at `inserting_into_index`.
   ///
@@ -98,22 +98,37 @@ impl World {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_components() {}
+  pub fn with_components(&self, bundle:impl Bundle) -> Result<()> {
+    self.entities.borrow_mut().with_components(bundle)
+  }
 
-  ///Add a component to the provided entity.
-  pub fn add_component(entity:Entity) {}
+  ///Add a component to the entity.
+  pub fn add_component<T:EcsData>(&self, entity:Entity, data:T) -> Result<()> {
+    self.entities.borrow_mut().add_component(entity, data)
+  }
 
-  ///Add a [`Bundle`] of components to the provided entity.
-  ///
-  /// # Warning
-  ///
-  /// Does not error if component is unregistered but operation will fail.
-  pub fn add_components(entity:Entity, components:impl Bundle) {}
+  ///Add a [`Bundle`] of components to the entity.
+  pub fn add_components(&self, entity:Entity, components:impl Bundle) -> Result<()> {
+    self.entities.borrow_mut().add_components(entity, components)
+  }
 
   ///Deletes an entity from the entities list matching the index.
-  /// Leaves the slot open -- the next entity added will overwrite the emptied
-  /// slot.
-  pub fn delete_entity() {}
+  ///
+  /// The next entity added will overwrite the emptied slot.
+  pub fn delete_entity(&self, entity:Entity) -> Result<()> {
+    self.entities.borrow_mut().delete_entity(entity)?;
+    Ok(())
+  }
+
+  /// Delete a component from the entity.
+  pub fn delete_component<T:EcsData>(&self, entity:Entity) -> Result<()> {
+    self.entities.borrow_mut().delete_component::<T>(entity)
+  }
+
+  /// Delete a type-erased component from the entity.
+  pub fn delete_component_erased(&self, entity:Entity, ty:TypeInfo) -> Result<()> {
+    self.entities.borrow_mut().delete_component_erased(entity, ty)
+  }
 }
 
 #[cfg(test)]
