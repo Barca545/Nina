@@ -20,7 +20,7 @@ impl RawErasedVec {
   fn new<T:'static>() -> Self {
     let ty = TypeInfo::of::<T>();
     let cap = if ty.size() == 0 { usize::MAX } else { 0 };
-    let ptr = NonNull::new(ty.size() as *mut u8).unwrap();
+    let ptr = NonNull::dangling();
 
     RawErasedVec { ptr, cap, ty }
   }
@@ -482,41 +482,44 @@ mod test {
 
   #[test]
   fn push_zst_into_and_read() {
-    let mut player_vec = ErasedVec::new::<Option<Player>>();
-    player_vec.push(Some(Player));
-    player_vec.push(Some(Player));
-    player_vec.push::<Option<Player>>(None);
-    player_vec.push(Some(Player));
-    player_vec.push::<Option<Player>>(None);
-    player_vec.push::<Option<Player>>(None);
+    let mut player_vec = ErasedVec::new::<Player>();
+    player_vec.push(Player);
+    player_vec.push(Player);
+    player_vec.pad();
+    player_vec.push(Player);
+    player_vec.pad();
+    player_vec.pad();
 
     //Confirm pushing normally works
     assert_eq!(player_vec.len, 6);
-    assert_eq!(*player_vec.get::<Option<Player>>(0), Some(Player));
-    assert_eq!(*player_vec.get::<Option<Player>>(1), Some(Player));
-    assert_eq!(*player_vec.get::<Option<Player>>(2), None);
-    assert_eq!(*player_vec.get::<Option<Player>>(3), Some(Player));
-    assert_eq!(*player_vec.get::<Option<Player>>(4), None);
-    assert_eq!(*player_vec.get::<Option<Player>>(5), None);
 
-    let mut player_vec = ErasedVec::new::<Option<Player>>();
-    let ty:TypeInfo = TypeInfo::of::<Option<Player>>();
-    player_vec.push_erased((&mut Some(Player) as *mut Option<Player>).cast::<u8>(), ty);
-    player_vec.push_erased((&mut Some(Player) as *mut Option<Player>).cast::<u8>(), ty);
-    player_vec.push_erased((&mut None as *mut Option<Player>).cast::<u8>(), ty);
-    player_vec.push_erased((&mut Some(Player) as *mut Option<Player>).cast::<u8>(), ty);
-    player_vec.push_erased((&mut None as *mut Option<Player>).cast::<u8>(), ty);
-    player_vec.push_erased((&mut None as *mut Option<Player>).cast::<u8>(), ty);
+    assert_eq!(*player_vec.get::<Player>(0), Player);
+    assert_eq!(*player_vec.get::<Player>(1), Player);
+    assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(2) }, []);
+    assert_eq!(*player_vec.get::<Player>(3), Player);
+    assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(4) }, []);
+    assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(5) }, []);
+
+    let mut player_vec = ErasedVec::new::<Player>();
+    let ty:TypeInfo = TypeInfo::of::<Player>();
+    player_vec.push_erased((&mut Player as *mut Player).cast::<u8>(), ty);
+    player_vec.push_erased((&mut Player as *mut Player).cast::<u8>(), ty);
+    player_vec.pad();
+    player_vec.push_erased((&mut Player as *mut Player).cast::<u8>(), ty);
+    player_vec.pad();
+    player_vec.pad();
 
     //Confirm pushing erased works
     assert_eq!(player_vec.len, 6);
     assert_eq!(player_vec.len, 6);
-    assert_eq!(*player_vec.get::<Option<Player>>(0), Some(Player));
-    assert_eq!(*player_vec.get::<Option<Player>>(1), Some(Player));
-    assert_eq!(*player_vec.get::<Option<Player>>(2), None);
-    assert_eq!(*player_vec.get::<Option<Player>>(3), Some(Player));
-    assert_eq!(*player_vec.get::<Option<Player>>(4), None);
-    assert_eq!(*player_vec.get::<Option<Player>>(5), None);
+    assert_eq!(player_vec.len, 6);
+
+    assert_eq!(*player_vec.get::<Player>(0), Player);
+    assert_eq!(*player_vec.get::<Player>(1), Player);
+    assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(2) }, []);
+    assert_eq!(*player_vec.get::<Player>(3), Player);
+    assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(4) }, []);
+    assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(5) }, []);
   }
 
   //This is the source of the error
