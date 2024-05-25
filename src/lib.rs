@@ -36,5 +36,5 @@ pub mod world;
 // use self
 
 // To Do
-// -Check if removing the Refcell fixes borrowing issues, if so, remove
+// -Remove the refcell around Entities
 // -Add command buffer

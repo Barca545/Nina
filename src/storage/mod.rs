@@ -1,9 +1,11 @@
 use std::any::Any;
 
-pub mod bundle;
-pub mod erased_collections;
-pub mod type_info;
-pub mod type_map;
+mod bundle;
+mod erased_collections;
+mod type_info;
+mod type_map;
+
+pub use self::{bundle::*, erased_collections::*, type_info::*, type_map::*};
 
 /// Types that can be components.
 ///

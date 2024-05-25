@@ -1,37 +1,23 @@
 use crate::{
   errors::EcsErrors,
-  storage::{erased_collections::ErasedBox, type_info::TypeInfo, type_map::TypeMap, EcsData}
+  storage::{EcsData, ErasedBox, TypeInfo, TypeMap}
 };
 
 ///Struct containing resources. Singleton values with only one instance in the
 /// game world.
 #[derive(Default)]
 pub struct Resources {
-  // data:RefCell<TypeMap<ErasedBox>>
   data:TypeMap<ErasedBox>
 }
 
 impl Resources {
   pub fn add_resource<T:EcsData>(&mut self, data:T) {
     let ty = TypeInfo::of::<T>();
-    let data_vec = ErasedBox::new::<T>(data);
-    // self.data.borrow_mut().insert(ty, data_vec);
-    self.data.insert(ty, data_vec);
+    self.data.insert(ty, ErasedBox::new::<T>(data));
   }
 
   pub fn get<T:EcsData>(&self) -> &T {
     let ty:TypeInfo = TypeInfo::of::<T>();
-    // let borrowed_resource = self.data;
-
-    // Ref::map(borrowed_resource, |resource| {
-    //   let data = resource
-    //     .get(&ty)
-    //     .ok_or(EcsErrors::ResourceDataDoesNotExist {
-    //       component:ty.name().to_string()
-    //     })
-    //     .unwrap();
-    //   data.get::<T>()
-    // })
     let data = self
       .data
       .get(&ty)
@@ -44,17 +30,6 @@ impl Resources {
 
   pub fn get_mut<T:EcsData>(&self) -> &mut T {
     let ty:TypeInfo = TypeInfo::of::<T>();
-    // let borrowed_resource = self.data;
-
-    // RefMut::map(borrowed_resource, |resource| {
-    //   let data = resource
-    //     .get(&ty)
-    //     .ok_or(EcsErrors::ResourceDataDoesNotExist {
-    //       component:ty.name().to_string()
-    //     })
-    //     .unwrap();
-    //   data.get_mut::<T>()
-    // })
     let data = self
       .data
       .get(&ty)

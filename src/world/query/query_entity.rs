@@ -1,6 +1,6 @@
 use crate::{
   errors::EcsErrors,
-  storage::{type_info::TypeInfo, EcsData},
+  storage::{EcsData, TypeInfo},
   world::Entities
 };
 use eyre::Result;

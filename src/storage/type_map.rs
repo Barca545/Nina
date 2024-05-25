@@ -3,7 +3,7 @@ use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
 use std::hash::{BuildHasher, BuildHasherDefault, Hasher};
 
 #[derive(Default)]
-pub(crate) struct TypeIdHasher {
+pub struct TypeIdHasher {
   hash:u64
 }
 
@@ -36,4 +36,4 @@ impl Hasher for TypeIdHasher {
   }
 }
 
-pub(crate) type TypeMap<V> = HashMap<TypeInfo, V, BuildHasherDefault<TypeIdHasher>>;
+pub type TypeMap<V> = HashMap<TypeInfo, V, BuildHasherDefault<TypeIdHasher>>;

@@ -1,6 +1,6 @@
 use crate::{
   errors::EcsErrors,
-  storage::{bundle::Bundle, erased_collections::ErasedVec, type_info::TypeInfo, type_map::TypeMap, EcsData}
+  storage::{Bundle, EcsData, ErasedVec, TypeInfo, TypeMap}
 };
 use eyre::Result;
 
@@ -12,11 +12,11 @@ pub type Entity = usize;
 
 #[derive(Default)]
 pub struct EntitiesInner {
-  pub(crate) components:TypeMap<ErasedVec>,
+  pub components:TypeMap<ErasedVec>,
   /// Contains the bitmasks for registered components.
   bitmasks:TypeMap<u128>,
   /// Vector of entity bitmasks.
-  pub(crate) map:Vec<u128>,
+  pub map:Vec<u128>,
   inserting_into_index:Entity
 }
 
@@ -78,7 +78,7 @@ impl EntitiesInner {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_components(&mut self, bundle:impl Bundle) -> Result<()> {
+  pub fn with_components<T:Bundle>(&mut self, bundle:T) -> Result<()> {
     unsafe {
       bundle.put(|ptr, ty| {
         let entity = self.inserting_into_index;
@@ -151,7 +151,7 @@ impl EntitiesInner {
   /// # Panics
   ///
   /// Panics if a component's type has not been registered.
-  pub fn add_components(&mut self, entity:Entity, components:impl Bundle) -> Result<()> {
+  pub fn add_components<T:Bundle>(&mut self, entity:Entity, components:T) -> Result<()> {
     unsafe {
       components.put(|ptr, ty| {
         if let Some(components) = self.components.get_mut(&ty) {
@@ -164,6 +164,34 @@ impl EntitiesInner {
           return Err(EcsErrors::CreateComponentNeverCalled { component:ty.name() }.into());
         }
       })
+    }
+  }
+
+  /// Returns the component from the queried entity.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the entity does not have the requested component.
+  pub fn get_component<T:EcsData>(&self, entity:Entity) -> Result<&T> {
+    let ty = TypeInfo::of::<T>();
+    if self.has_component::<T>(entity).unwrap() {
+      return Ok(self.components.get(&ty).unwrap().get::<T>(entity));
+    } else {
+      return Err(EcsErrors::ComponentDataDoesNotExist.into());
+    }
+  }
+
+  /// Mutably returns the component from the queried entity.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the entity does not have the requested component.
+  pub fn get_component_mut<T:EcsData>(&self, entity:Entity) -> Result<&mut T> {
+    let ty = TypeInfo::of::<T>();
+    if self.has_component::<T>(entity).unwrap() {
+      return Ok(self.components.get(&ty).unwrap().get_mut::<T>(entity));
+    } else {
+      return Err(EcsErrors::ComponentDataDoesNotExist.into());
     }
   }
 
@@ -186,7 +214,8 @@ impl EntitiesInner {
     self.bitmasks.get(ty).copied()
   }
 
-  ///Checks whether an entity has a component of type `T` and returns a bool.
+  ///Checks whether an entity has a component of type `T` and returns a
+  /// [`Result<bool>`].
   ///
   /// # Panics
   ///
