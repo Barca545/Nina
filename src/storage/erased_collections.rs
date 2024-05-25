@@ -17,7 +17,7 @@ struct RawErasedVec {
 }
 
 impl RawErasedVec {
-  fn new<T:'static + Send + Sync>() -> Self {
+  fn new<T:'static>() -> Self {
     let ty = TypeInfo::of::<T>();
     let cap = if ty.size() == 0 { usize::MAX } else { 0 };
     let ptr = NonNull::new(ty.size() as *mut u8).unwrap();
@@ -84,7 +84,7 @@ impl ErasedVec {
   ///Constructs a new, empty [`ErasedVec<T>`].
   ///
   ///The vector will not allocate until elements are pushed onto it.
-  pub fn new<T:'static + Send + Sync>() -> Self {
+  pub fn new<T:'static>() -> Self {
     ErasedVec {
       buf:RawErasedVec::new::<T>(),
       len:0
@@ -100,7 +100,7 @@ impl ErasedVec {
   /// # Warning
   ///
   /// The pointer is calculated using the internal [`TypeInfo`].
-  pub unsafe fn indexed_ptr<T:'static + Send + Sync>(&self, index:usize) -> *mut T {
+  pub unsafe fn indexed_ptr<T:'static>(&self, index:usize) -> *mut T {
     let index = index * self.ty().size();
     self.ptr().add(index) as *mut T
   }
@@ -127,7 +127,7 @@ impl ErasedVec {
   /// in the `ErasedVec`.
   ///
   /// Panics if `index` > `self.len`.
-  pub fn get<T:'static + Send + Sync>(&self, index:usize) -> &T {
+  pub fn get<T:'static>(&self, index:usize) -> &T {
     // Confirm the vector contains `T`
     self.assert_type_info(TypeInfo::of::<T>());
 
@@ -163,7 +163,7 @@ impl ErasedVec {
   /// in the `ErasedVec`.
   ///
   /// Panics if `index` > `self.len`.
-  pub fn get_mut<T:'static + Send + Sync>(&self, index:usize) -> &mut T {
+  pub fn get_mut<T:'static>(&self, index:usize) -> &mut T {
     // Confirm the vector contains `T`
     self.assert_type_info(TypeInfo::of::<T>());
 
@@ -356,7 +356,7 @@ impl Drop for ErasedVec {
 pub struct ErasedBox(RawErasedVec);
 
 impl ErasedBox {
-  pub fn new<T:'static + Send + Sync>(value:T) -> Self {
+  pub fn new<T:'static>(value:T) -> Self {
     // Create the buf
     let mut buf = RawErasedVec::new::<T>();
     buf.grow_exact(1);
@@ -389,7 +389,7 @@ impl ErasedBox {
   /// in the `ErasedVec`.
   ///
   /// Panics if `index` > `self.len`
-  pub fn get<T:'static + Send + Sync>(&self) -> &T {
+  pub fn get<T:'static>(&self) -> &T {
     // Confirm the vector contains `T`
     self.assert_type_info(TypeInfo::of::<T>());
 
@@ -405,7 +405,7 @@ impl ErasedBox {
   /// in the `ErasedVec`.
   ///
   /// Panics if `index` > `self.len`
-  pub fn get_mut<T:'static + Send + Sync>(&self) -> &mut T {
+  pub fn get_mut<T:'static>(&self) -> &mut T {
     // Confirm the vector contains `T`
     self.assert_type_info(TypeInfo::of::<T>());
 
