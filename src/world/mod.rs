@@ -5,7 +5,7 @@ use self::{
 };
 use crate::storage::{bundle::Bundle, type_info::TypeInfo, EcsData};
 use eyre::Result;
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
 
 pub mod command_buffer;
 pub mod entities;
@@ -38,7 +38,7 @@ impl World {
   }
 
   ///Add a new resource to the world.
-  pub fn add_resource(&self, data:impl EcsData) -> &Self {
+  pub fn add_resource(&mut self, data:impl EcsData) -> &Self {
     self.resources.add_resource(data);
     self
   }
@@ -48,7 +48,7 @@ impl World {
   /// # Panics
   ///
   /// Panics if the resource has not been added.
-  pub fn get_resource<T:EcsData>(&self) -> Ref<T> {
+  pub fn get_resource<T:EcsData>(&self) -> &T {
     self.resources.get::<T>()
   }
 
@@ -57,7 +57,7 @@ impl World {
   /// # Panics
   ///
   /// Panics if the resource has not been added.
-  pub fn get_resource_mut<T:EcsData>(&self) -> RefMut<T> {
+  pub fn get_resource_mut<T:EcsData>(&self) -> &mut T {
     self.resources.get_mut::<T>()
   }
 

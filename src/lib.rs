@@ -36,9 +36,5 @@ pub mod world;
 // use self
 
 // To Do
-// -Add Component Storage / Entities
-// -Add tests for using bundles with Component Storage
-// -Add Resource Storage
-// -Add Bundle
-// -Add Query
+// -Check if removing the Refcell fixes borrowing issues, if so, remove
 // -Add command buffer
