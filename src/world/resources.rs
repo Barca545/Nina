@@ -1,6 +1,6 @@
 use crate::{
   errors::EcsErrors,
-  storage::{erased_vec::ErasedBox, type_info::TypeInfo, type_map::TypeMap, EcsData}
+  storage::{erased_collections::ErasedBox, type_info::TypeInfo, type_map::TypeMap, EcsData}
 };
 use std::cell::{Ref, RefCell, RefMut};
 

@@ -36,4 +36,4 @@ impl Hasher for TypeIdHasher {
   }
 }
 
-pub type TypeMap<V> = HashMap<TypeInfo, V, BuildHasherDefault<TypeIdHasher>>;
+pub(crate) type TypeMap<V> = HashMap<TypeInfo, V, BuildHasherDefault<TypeIdHasher>>;

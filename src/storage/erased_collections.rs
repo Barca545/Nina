@@ -1,20 +1,14 @@
 use super::type_info::TypeInfo;
 use crate::errors::ErasedVecErrors::{DoesNotContainType, ErasedVecAllocError, ErasedVecCapacityOverflow, IncorrectTypeInsertion, IndexOutOfBounds};
 use std::{
-  alloc,
-  mem::{self, ManuallyDrop},
+  alloc, mem,
   ptr::{self, NonNull}
 };
 
 // Refactor:
 // -No `pop` method. Unsure it is needed.
 // -No `remove` method. Unsure it is needed.
-// -Rework the typed insert and pushes
-// -I don't think Drop needs to drop each element individually
-// -Might need to add explict drop logic in pushing/insertion?
 // -Rename this collections
-// -Impl Drop for ErasedBox
-// -Use indexed_ptr method internally for the get methods
 
 struct RawErasedVec {
   ptr:NonNull<u8>,

@@ -3,7 +3,6 @@ use self::{
   query::query::Query,
   resources::Resources
 };
-
 use crate::storage::{bundle::Bundle, type_info::TypeInfo, EcsData};
 use eyre::Result;
 use std::cell::{Ref, RefCell, RefMut};
@@ -20,8 +19,8 @@ pub mod resources;
 // -Move the big doctest example to the top of the module documentation
 //  Update it to test for querying
 // -Update `World` to `WorldInner` and have `World` be `Rc<WorldInner>`.
-
-pub type Entities = RefCell<EntitiesInner>;
+// -Do I need a reserve_entity method. Do I need a command buffer method since
+// world is never mutably borrowed?
 
 pub struct World {
   resources:Resources,
@@ -144,6 +143,13 @@ impl World {
     Query::new(&self.entities)
   }
 }
+
+//CommandBuffer implementation
+impl World {
+  pub fn command_buffer(&self) {}
+}
+
+type Entities = RefCell<EntitiesInner>;
 
 #[cfg(test)]
 mod tests {

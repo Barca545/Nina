@@ -1,6 +1,6 @@
 use crate::{
   errors::EcsErrors,
-  storage::{bundle::Bundle, erased_vec::ErasedVec, type_info::TypeInfo, type_map::TypeMap, EcsData}
+  storage::{bundle::Bundle, erased_collections::ErasedVec, type_info::TypeInfo, type_map::TypeMap, EcsData}
 };
 use eyre::Result;
 

@@ -1,7 +1,7 @@
 use std::any::Any;
 
 pub mod bundle;
-pub mod erased_vec;
+pub mod erased_collections;
 pub mod type_info;
 pub mod type_map;
 
