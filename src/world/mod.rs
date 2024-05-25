@@ -38,7 +38,7 @@ impl World {
   }
 
   ///Add a new resource to the world.
-  pub fn add_resource(&mut self, data:impl EcsData) -> &Self {
+  pub fn add_resource(&mut self, data:impl EcsData) -> &mut Self {
     self.resources.add_resource(data);
     self
   }
