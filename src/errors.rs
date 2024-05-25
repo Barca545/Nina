@@ -20,6 +20,9 @@ pub enum ErasedVecErrors {
   ErasedVecCapacityOverflow
 }
 
+// Refactor:
+// -Should CreateComponentNeverCalled and ComponentNotRegistered be different?
+
 #[derive(Debug, Error)]
 pub enum EcsErrors {
   #[error("Attempting to add {component:?} to an entitity without registering it first!")]

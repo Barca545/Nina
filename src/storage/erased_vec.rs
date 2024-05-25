@@ -13,6 +13,7 @@ use std::{
 // -Might need to add explict drop logic in pushing/insertion?
 // -Rename this collections
 // -Impl Drop for ErasedBox
+// -Use indexed_ptr method internally for the get methods
 
 struct RawErasedVec {
   ptr:NonNull<u8>,
@@ -94,6 +95,16 @@ impl ErasedVec {
 
   fn ptr(&self) -> *mut u8 {
     self.buf.ptr.as_ptr()
+  }
+
+  /// Returns a ptr to the value stored at the requested index.
+  ///
+  /// # Warning
+  ///
+  /// The pointer is calculated using the internal [`TypeInfo`].
+  pub unsafe fn indexed_ptr<T:'static + Send + Sync>(&self, index:usize) -> *mut T {
+    let index = index * self.ty().size();
+    self.ptr().add(index) as *mut T
   }
 
   fn ty(&self) -> TypeInfo {

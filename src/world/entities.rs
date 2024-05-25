@@ -11,16 +11,16 @@ use eyre::Result;
 pub type Entity = usize;
 
 #[derive(Default)]
-pub struct Entities {
-  components:TypeMap<ErasedVec>,
+pub struct EntitiesInner {
+  pub(crate) components:TypeMap<ErasedVec>,
   /// Contains the bitmasks for registered components.
   bitmasks:TypeMap<u128>,
   /// Vector of entity bitmasks.
-  pub map:Vec<u128>,
+  pub(crate) map:Vec<u128>,
   inserting_into_index:Entity
 }
 
-impl Entities {
+impl EntitiesInner {
   /// Register type `T` as a component type.
   ///
   /// All types must be registered before they can be used as components.
@@ -120,7 +120,7 @@ impl Entities {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn add_component<T:EcsData>(&mut self, entity:Entity, data:T) -> Result<()> {
+  pub fn add_component<T:EcsData>(&mut self, entity:Entity, component:T) -> Result<()> {
     let ty = TypeInfo::of::<T>();
 
     if let Some(mask) = self.bitmasks.get(&ty) {
@@ -129,8 +129,8 @@ impl Entities {
       return Err(EcsErrors::ComponentNotRegistered.into());
     };
 
-    let components = self.components.get_mut(&ty).unwrap().get_mut::<T>(entity);
-    *components = data;
+    let component_slot = self.components.get_mut(&ty).unwrap().get_mut::<T>(entity);
+    *component_slot = component;
 
     Ok(())
   }
@@ -183,7 +183,21 @@ impl Entities {
   ///Returns an [`Option<u128>`] containing the `bitmask`of a given
   /// [`TypeInfo`].
   pub fn get_bitmask(&self, ty:&TypeInfo) -> Option<u128> {
-    return self.bitmasks.get(ty).copied();
+    self.bitmasks.get(ty).copied()
+  }
+
+  ///Checks whether an entity has a component of type `T` and returns a bool.
+  ///
+  /// # Panics
+  ///
+  /// Panics if the component was never registered;
+  pub fn has_component<T:EcsData>(&self, entity:Entity) -> Result<bool> {
+    let ty = TypeInfo::of::<T>();
+
+    match self.get_bitmask(&ty) {
+      Some(mask) => Ok((self.map[entity] & mask) != 0),
+      None => Err(EcsErrors::ComponentNotRegistered.into())
+    }
   }
 }
 
@@ -194,7 +208,7 @@ mod tests {
 
   #[test]
   fn register_an_entity() {
-    let mut entities:Entities = Entities::default();
+    let mut entities:EntitiesInner = EntitiesInner::default();
     let ty = TypeInfo::of::<Health>();
     entities.register_component::<Health>();
     let health_components = entities.components.get(&ty).unwrap();
@@ -203,7 +217,7 @@ mod tests {
 
   #[test]
   fn bitmask_updated_when_register_a_component() {
-    let mut entities:Entities = Entities::default();
+    let mut entities:EntitiesInner = EntitiesInner::default();
 
     entities.register_component::<Health>();
     let typeid = TypeInfo::of::<Health>();
@@ -218,26 +232,26 @@ mod tests {
 
   #[test]
   fn create_an_entity() {
-    let mut entities:Entities = Entities::default();
+    let mut entities:EntitiesInner = EntitiesInner::default();
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
     entities.create_entity();
-    let health = entities.components.get(&TypeInfo::of::<Health>()).unwrap();
-    let speed = entities.components.get(&TypeInfo::of::<Speed>()).unwrap();
+    let healths = entities.components.get(&TypeInfo::of::<Health>()).unwrap();
+    let speeds = entities.components.get(&TypeInfo::of::<Speed>()).unwrap();
 
     //Confirm the entity's slot is padded
-    assert!(health.len() == speed.len() && health.len() == 1);
+    assert!(healths.len() == speeds.len() && healths.len() == 1);
 
-    let health_data = unsafe { health.get_unchecked::<[u8; 4]>(0) };
+    let health_data = unsafe { healths.get_unchecked::<[u8; 4]>(0) };
     assert_eq!(health_data, &[0; 4]);
 
-    let speed_data = unsafe { speed.get_unchecked::<[u8; 4]>(0) };
+    let speed_data = unsafe { speeds.get_unchecked::<[u8; 4]>(0) };
     assert_eq!(speed_data, &[0; 4]);
   }
 
   #[test]
   fn create_with_component() -> Result<()> {
-    let mut entities:Entities = Entities::default();
+    let mut entities:EntitiesInner = EntitiesInner::default();
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
 
@@ -254,7 +268,7 @@ mod tests {
 
   #[test]
   fn create_with_component_bundle() -> Result<()> {
-    let mut entities:Entities = Entities::default();
+    let mut entities:EntitiesInner = EntitiesInner::default();
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
 
@@ -272,7 +286,7 @@ mod tests {
 
   #[test]
   fn map_is_updated_when_creating_entities() -> Result<()> {
-    let mut entities:Entities = Entities::default();
+    let mut entities:EntitiesInner = EntitiesInner::default();
 
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
@@ -295,7 +309,7 @@ mod tests {
 
   #[test]
   fn delete_component_by_entity_id() -> Result<()> {
-    let mut entities = Entities::default();
+    let mut entities = EntitiesInner::default();
 
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
@@ -317,7 +331,7 @@ mod tests {
 
   #[test]
   fn delete_component_by_entity_id_erased() -> Result<()> {
-    let mut entities = Entities::default();
+    let mut entities = EntitiesInner::default();
 
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
@@ -339,7 +353,7 @@ mod tests {
 
   #[test]
   fn add_component_to_entity_by_id() -> Result<()> {
-    let mut entities = Entities::default();
+    let mut entities = EntitiesInner::default();
 
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
@@ -362,7 +376,7 @@ mod tests {
 
   #[test]
   fn add_component_to_entity_by_id_erased() -> Result<()> {
-    let mut entities = Entities::default();
+    let mut entities = EntitiesInner::default();
 
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
@@ -390,7 +404,7 @@ mod tests {
 
   #[test]
   fn delete_entity_by_id() -> Result<()> {
-    let mut entities = Entities::default();
+    let mut entities = EntitiesInner::default();
 
     entities.register_component::<Health>();
 
@@ -406,7 +420,7 @@ mod tests {
 
   #[test]
   fn created_entities_are_inserted_into_deleted_entities_columns() -> Result<()> {
-    let mut entities = Entities::default();
+    let mut entities = EntitiesInner::default();
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
 

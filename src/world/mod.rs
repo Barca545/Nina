@@ -1,14 +1,17 @@
 use self::{
-  entities::{Entities, Entity},
+  entities::{EntitiesInner, Entity},
+  query::query::Query,
   resources::Resources
 };
+
 use crate::storage::{bundle::Bundle, type_info::TypeInfo, EcsData};
 use eyre::Result;
 use std::cell::{Ref, RefCell, RefMut};
 
-mod entities;
-mod query;
-mod resources;
+pub mod command_buffer;
+pub mod entities;
+pub mod query;
+pub mod resources;
 
 //World must have mutation through &World
 // Refactor:
@@ -18,17 +21,21 @@ mod resources;
 //  Update it to test for querying
 // -Update `World` to `WorldInner` and have `World` be `Rc<WorldInner>`.
 
-#[derive(Default)]
+pub type Entities = RefCell<EntitiesInner>;
+
 pub struct World {
   resources:Resources,
-  entities:RefCell<Entities>
+  entities:Entities
 }
 
 //Resource Implementation
 impl World {
   ///Generates an empty [`World`].
   pub fn new() -> Self {
-    Self::default()
+    World {
+      resources:Default::default(),
+      entities:Default::default()
+    }
   }
 
   ///Add a new resource to the world.
@@ -128,6 +135,13 @@ impl World {
   /// Delete a type-erased component from the entity.
   pub fn delete_component_erased(&self, entity:Entity, ty:TypeInfo) -> Result<()> {
     self.entities.borrow_mut().delete_component_erased(entity, ty)
+  }
+}
+
+//Query implementation
+impl World {
+  pub fn query(&self) -> Query {
+    Query::new(&self.entities)
   }
 }
 

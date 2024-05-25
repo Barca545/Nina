@@ -1,9 +1,9 @@
 use std::any::Any;
 
-pub(crate) mod bundle;
-pub(crate) mod erased_vec;
-pub(crate) mod type_info;
-pub(crate) mod type_map;
+pub mod bundle;
+pub mod erased_vec;
+pub mod type_info;
+pub mod type_map;
 
 /// Types that can be components.
 ///

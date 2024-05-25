@@ -26,8 +26,8 @@
 
 // mod erased_vec;
 mod errors;
-mod storage;
 
+pub mod storage;
 pub mod world;
 
 // Refactor
