@@ -23,7 +23,7 @@ impl<'a> QueryEntity<'a> {
   /// Panics if the entity does not have the component.
   pub fn get_component<T:EcsData>(&self) -> Result<&T> {
     let ty = TypeInfo::of::<T>();
-    let entities = self.entities.borrow();
+    let entities = self.entities;
 
     if entities.has_component::<T>(self.id)? {
       let components = entities.components.get(&ty).unwrap();
@@ -42,7 +42,7 @@ impl<'a> QueryEntity<'a> {
   /// Panics if the entity does not have the component.
   pub fn get_component_mut<T:EcsData>(&self) -> Result<&mut T> {
     let ty = TypeInfo::of::<T>();
-    let entities = self.entities.borrow();
+    let entities = self.entities;
 
     if entities.has_component::<T>(self.id)? {
       let components = entities.components.get(&ty).unwrap();
@@ -53,24 +53,4 @@ impl<'a> QueryEntity<'a> {
       return Err(EcsErrors::ComponentDataDoesNotExist.into());
     }
   }
-
-  /// Add a component to the entity referenced by the [`QueryEntity`].
-  pub fn add_component<T:EcsData>(&self, component:T) -> Result<()> {
-    self.entities.borrow_mut().add_component(self.id, component)
-  }
-
-  // ///Returns an `Rc` smart pointer to the component.
-  // pub fn get_commonent_ref<T:Any>(&self) -> Result<ComponentRef<T>> {
-  //   let components = self.extract_components::<T>()?;
-  //   let component = components[self.id].as_ref();
-
-  //   match component {
-  //     Some(component) => {
-  //       let component = component;
-  //       let component_ref = ComponentRef::new::<T>(component.clone());
-  //       Ok(component_ref)
-  //     }
-  //     None => Err(EcsErrors::ComponentDataDoesNotExist.into())
-  //   }
-  // }
 }

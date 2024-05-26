@@ -34,7 +34,7 @@ impl EntitiesInner {
   }
 
   /// Returns the next free entity id for insertion.
-  pub fn create_entity(&mut self) {
+  pub fn create_entity(&mut self) -> Entity {
     if let Some((index, _)) = self.map.iter().enumerate().find(|(_index, mask)| **mask == 0) {
       self.inserting_into_index = index;
     }
@@ -44,6 +44,7 @@ impl EntitiesInner {
       self.map.push(0);
       self.inserting_into_index = self.map.len() - 1;
     }
+    self.inserting_into_index
   }
 
   /// Add a component of type `T` to the entity at `inserting_into_index`.
@@ -58,8 +59,7 @@ impl EntitiesInner {
     let index = self.inserting_into_index;
 
     if let Some(components) = self.components.get_mut(&ty) {
-      let component = components.get_mut::<T>(index);
-      *component = data;
+      components.set::<T>(index, data);
 
       let bitmask = self.bitmasks.get(&ty).unwrap();
       self.map[index] |= *bitmask
@@ -78,13 +78,13 @@ impl EntitiesInner {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_components<T:Bundle>(&mut self, bundle:T) -> Result<()> {
+  pub fn with_components<T:Bundle>(&mut self, components:T) -> Result<()> {
     unsafe {
-      bundle.put(|ptr, ty| {
+      components.put(|ptr, ty| {
         let entity = self.inserting_into_index;
 
         if let Some(components) = self.components.get_mut(&ty) {
-          components.insert_erased(ptr, ty, entity);
+          components.set_erased(entity, ty, ptr);
 
           let bitmask = self.bitmasks.get(&ty).unwrap();
           self.map[entity] |= *bitmask;
@@ -129,8 +129,7 @@ impl EntitiesInner {
       return Err(EcsErrors::ComponentNotRegistered.into());
     };
 
-    let component_slot = self.components.get_mut(&ty).unwrap().get_mut::<T>(entity);
-    *component_slot = component;
+    self.components.get_mut(&ty).unwrap().set::<T>(entity, component);
 
     Ok(())
   }
@@ -142,8 +141,16 @@ impl EntitiesInner {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn add_component_erased<T:EcsData>(&mut self, entity:Entity, data:T) -> Result<()> {
-    self.add_components(entity, (data,))
+  pub fn add_component_erased(&mut self, entity:Entity, ty:TypeInfo, ptr:*mut u8) -> Result<()> {
+    if let Some(components) = self.components.get_mut(&ty) {
+      components.set_erased(entity, ty, ptr);
+
+      let bitmask = self.bitmasks.get(&ty).unwrap();
+      self.map[entity] |= *bitmask;
+      Ok(())
+    } else {
+      return Err(EcsErrors::CreateComponentNeverCalled { component:ty.name() }.into());
+    }
   }
 
   /// Add a [`Bundle`] of components to the provided entity.
@@ -155,7 +162,7 @@ impl EntitiesInner {
     unsafe {
       components.put(|ptr, ty| {
         if let Some(components) = self.components.get_mut(&ty) {
-          components.insert_erased(ptr, ty, entity);
+          components.set_erased(entity, ty, ptr);
 
           let bitmask = self.bitmasks.get(&ty).unwrap();
           self.map[entity] |= *bitmask;
@@ -164,34 +171,6 @@ impl EntitiesInner {
           return Err(EcsErrors::CreateComponentNeverCalled { component:ty.name() }.into());
         }
       })
-    }
-  }
-
-  /// Returns the component from the queried entity.
-  ///
-  /// # Panics
-  ///
-  /// Panics if the entity does not have the requested component.
-  pub fn get_component<T:EcsData>(&self, entity:Entity) -> Result<&T> {
-    let ty = TypeInfo::of::<T>();
-    if self.has_component::<T>(entity).unwrap() {
-      return Ok(self.components.get(&ty).unwrap().get::<T>(entity));
-    } else {
-      return Err(EcsErrors::ComponentDataDoesNotExist.into());
-    }
-  }
-
-  /// Mutably returns the component from the queried entity.
-  ///
-  /// # Panics
-  ///
-  /// Panics if the entity does not have the requested component.
-  pub fn get_component_mut<T:EcsData>(&self, entity:Entity) -> Result<&mut T> {
-    let ty = TypeInfo::of::<T>();
-    if self.has_component::<T>(entity).unwrap() {
-      return Ok(self.components.get(&ty).unwrap().get_mut::<T>(entity));
-    } else {
-      return Err(EcsErrors::ComponentDataDoesNotExist.into());
     }
   }
 
@@ -271,11 +250,11 @@ mod tests {
     //Confirm the entity's slot is padded
     assert!(healths.len() == speeds.len() && healths.len() == 1);
 
-    let health_data = unsafe { healths.get_unchecked::<[u8; 4]>(0) };
-    assert_eq!(health_data, &[0; 4]);
+    let health_data = unsafe { healths.get_unchecked::<[u8; 4]>(0).clone() };
+    assert_eq!(health_data, [0; 4]);
 
-    let speed_data = unsafe { speeds.get_unchecked::<[u8; 4]>(0) };
-    assert_eq!(speed_data, &[0; 4]);
+    let speed_data = unsafe { speeds.get_unchecked::<[u8; 4]>(0).clone() };
+    assert_eq!(speed_data, [0; 4]);
   }
 
   #[test]
@@ -288,9 +267,11 @@ mod tests {
     entities.with_component(Health(100))?;
     entities.with_component(Speed(15))?;
 
-    let health = entities.components.get(&TypeInfo::of::<Health>()).unwrap().get::<Health>(0);
+    let borrowed_healths = entities.components.get(&TypeInfo::of::<Health>()).unwrap();
+    let health = borrowed_healths.get::<Health>(0);
     assert_eq!(health.0, 100);
-    let speed = entities.components.get(&TypeInfo::of::<Speed>()).unwrap().get::<Speed>(0);
+    let borrowed_speeds = entities.components.get(&TypeInfo::of::<Speed>()).unwrap();
+    let speed = borrowed_speeds.get::<Speed>(0);
     assert_eq!(speed.0, 15);
     Ok(())
   }
@@ -300,15 +281,24 @@ mod tests {
     let mut entities:EntitiesInner = EntitiesInner::default();
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
+    entities.register_component::<Vec<u16>>();
 
     entities.create_entity();
 
-    entities.with_components((Health(100), Speed(15)))?;
+    entities.with_components((Health(99), Speed(45), vec![11_u16, 13_u16]))?;
 
-    let health = entities.components.get(&TypeInfo::of::<Health>()).unwrap().get::<Health>(0);
+    entities.add_components(0, (Health(100), Speed(15), vec![15_u16, 12_u16])).unwrap();
+
+    let borrowed_healths = entities.components.get(&TypeInfo::of::<Health>()).unwrap();
+    let health = borrowed_healths.get::<Health>(0);
     assert_eq!(health.0, 100);
-    let speed = entities.components.get(&TypeInfo::of::<Speed>()).unwrap().get::<Speed>(0);
+    let borrowed_speeds = entities.components.get(&TypeInfo::of::<Speed>()).unwrap();
+    let speed = borrowed_speeds.get::<Speed>(0);
     assert_eq!(speed.0, 15);
+    let borrowed_vec = entities.components.get(&TypeInfo::of::<Vec<u16>>()).unwrap();
+    let vec = borrowed_vec.get::<Vec<u16>>(0);
+    assert_eq!(vec[0], 15_u16);
+    assert_eq!(vec[1], 12_u16);
 
     Ok(())
   }
@@ -396,7 +386,8 @@ mod tests {
     assert_eq!(entities.map[0], 3);
 
     let speed_ty = TypeInfo::of::<Speed>();
-    let speed = entities.components.get(&speed_ty).unwrap().get::<Speed>(0);
+    let borrowed_speeds = entities.components.get(&speed_ty).unwrap();
+    let speed = borrowed_speeds.get::<Speed>(0);
 
     assert_eq!(speed.0, 50);
 
@@ -406,25 +397,28 @@ mod tests {
   #[test]
   fn add_component_to_entity_by_id_erased() -> Result<()> {
     let mut entities = EntitiesInner::default();
+    let speed_ty = TypeInfo::of::<Speed>();
 
     entities.register_component::<Health>();
     entities.register_component::<Speed>();
 
     entities.create_entity();
     entities.with_component(Health(100))?;
-    entities.add_component_erased(0, Speed(50))?;
+
+    entities.add_component_erased(0, speed_ty, (&mut Speed(50) as *mut Speed).cast::<u8>())?;
 
     entities.create_entity();
-    entities.add_component_erased(1, Speed(131))?;
+    entities.add_component_erased(1, speed_ty, (&mut Speed(131) as *mut Speed).cast::<u8>())?;
 
     assert_eq!(entities.map[0], 3);
 
     let speed_ty = TypeInfo::of::<Speed>();
-    let speed_1 = entities.components.get(&speed_ty).unwrap().get::<Speed>(0);
+    let borrowed_speeds = entities.components.get(&speed_ty).unwrap();
+    let speed_1 = borrowed_speeds.get::<Speed>(0);
 
     assert_eq!(speed_1.0, 50);
 
-    let speed_2 = entities.components.get(&speed_ty).unwrap().get::<Speed>(1);
+    let speed_2 = borrowed_speeds.get::<Speed>(1);
 
     assert_eq!(speed_2.0, 131);
 
@@ -467,7 +461,8 @@ mod tests {
     assert_eq!(entities.map[0], 1);
 
     let ty = TypeInfo::of::<Health>();
-    let health = entities.components.get(&ty).unwrap().get::<Health>(0);
+    let borrowed_healths = entities.components.get(&ty).unwrap();
+    let health = borrowed_healths.get::<Health>(0);
 
     assert_eq!(health.0, 25);
 

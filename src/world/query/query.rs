@@ -26,7 +26,7 @@ impl<'a> Query<'a> {
   ///Register a component the queried entities must hold.
   pub fn with_component<T:EcsData>(&mut self) -> Result<&mut Self> {
     let ty = TypeInfo::of::<T>();
-    if let Some(bit_mask) = self.entities.borrow().get_bitmask(&ty) {
+    if let Some(bit_mask) = self.entities.get_bitmask(&ty) {
       self.map |= bit_mask;
     } else {
       return Err(EcsErrors::ComponentNotRegistered.into());
@@ -37,7 +37,7 @@ impl<'a> Query<'a> {
   ///Register a component the queried entities must not hold.
   pub fn without_component<T:EcsData>(&mut self) -> Result<&mut Self> {
     let ty = TypeInfo::of::<T>();
-    if let Some(bit_mask) = self.entities.borrow().get_bitmask(&ty) {
+    if let Some(bit_mask) = self.entities.get_bitmask(&ty) {
       self.exclude_map |= bit_mask;
     } else {
       return Err(EcsErrors::ComponentNotRegistered.into());
@@ -50,7 +50,6 @@ impl<'a> Query<'a> {
   pub fn run(&self) -> Vec<QueryEntity> {
     self
       .entities
-      .borrow()
       .map
       .iter()
       .enumerate()
@@ -73,7 +72,7 @@ mod test {
 
   #[test]
   fn query_mask_updating_with_component() -> Result<()> {
-    let world = World::new();
+    let mut world = World::new();
     world.register_component::<u32>();
     world.register_component::<f32>();
     world.register_component::<usize>();
@@ -88,7 +87,7 @@ mod test {
 
   #[test]
   fn get_component_works() -> Result<()> {
-    let world = World::new();
+    let mut world = World::new();
 
     world.register_component::<u32>();
     world.register_component::<f32>();
@@ -113,7 +112,7 @@ mod test {
 
   #[test]
   fn query_for_entity_mutable() -> Result<()> {
-    let world = World::new();
+    let mut world = World::new();
     world.register_component::<Health>().register_component::<f32>();
 
     world.create_entity().with_component(Health(100))?;
@@ -144,7 +143,7 @@ mod test {
 
   #[test]
   fn query_for_entity_after_component_delete() -> Result<()> {
-    let world = World::new();
+    let mut world = World::new();
     world.register_component::<Health>();
     world.register_component::<Damage>();
 
@@ -161,7 +160,7 @@ mod test {
 
   #[test]
   fn query_for_entity_without_component() -> Result<()> {
-    let world = World::new();
+    let mut world = World::new();
     world.register_component::<Health>();
     world.register_component::<Damage>();
     world.register_component::<usize>();

@@ -1,7 +1,7 @@
 //!  ```
 //! #  use nina::world::World;
 //!
-//!  let world = World::new();
+//!  let mut world = World::new();
 //!
 //!  world
 //!    .register_component::<u32>()
@@ -34,6 +34,7 @@ pub mod world;
 // -Fix the crate imports
 // -Rename the world crate to ecs and have it be the only export from nina as
 // use self
+// -I think it's worth moving Arena and some
 
 // To Do
 // -Remove the refcell around Entities

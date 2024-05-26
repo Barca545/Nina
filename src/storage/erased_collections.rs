@@ -147,7 +147,7 @@ impl ErasedVec {
   /// # Panics
   ///
   /// Panics if `index` > `self.len`.
-  pub unsafe fn get_unchecked<T:'static + Send + Sync>(&self, index:usize) -> &T {
+  pub unsafe fn get_unchecked<T:'static>(&self, index:usize) -> &T {
     // Confirm the index is in bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
 
@@ -207,7 +207,7 @@ impl ErasedVec {
   }
 
   ///Append a value to the back of the [`ErasedVec`].
-  pub fn push<T:'static + Send + Sync>(&mut self, value:T) {
+  pub fn push<T:'static>(&mut self, value:T) {
     self.assert_type_info_insert(TypeInfo::of::<T>());
 
     // Grow the Vec if it is at max capacity
@@ -216,7 +216,7 @@ impl ErasedVec {
     }
 
     // Copy the value as raw bits into the `ErasedVec`
-    // let value = ManuallyDrop::new(value);s
+    // let value = ManuallyDrop::new(value);
     // let val_ptr = (&value as *const ManuallyDrop<T>).cast::<u8>();
     let val_ptr = (&value as *const T).cast::<u8>();
 
@@ -265,7 +265,7 @@ impl ErasedVec {
   /// # Panics
   ///
   /// Panics if `index > len`.
-  pub fn insert<T:'static + Send + Sync>(&mut self, index:usize, value:T) {
+  pub fn insert<T:'static>(&mut self, index:usize, value:T) {
     self.assert_type_info_insert(TypeInfo::of::<T>());
 
     // Check whether the index is within bounds
@@ -319,6 +319,61 @@ impl ErasedVec {
 
       // Copy the value as raw bits into the `ErasedVec`
       ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().size());
+    }
+
+    self.len += 1;
+  }
+
+  /// Overwrites an element at position `index` within the vector.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `index > len`.
+  ///
+  /// Panics if `ty` != `self.ty()`
+  pub fn set<T:'static>(&mut self, index:usize, data:T) {
+    self.assert_type_info_insert(TypeInfo::of::<T>());
+
+    // Check whether the index is within bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+    if self.len == self.cap() {
+      self.buf.grow()
+    }
+
+    unsafe {
+      // Copy the value as raw bits into the `ErasedVec`
+      let val_ptr = (&data as *const T).cast::<u8>();
+      ptr::copy_nonoverlapping(val_ptr, self.indexed_ptr(index), self.ty().size());
+    }
+
+    self.len += 1;
+  }
+
+  /// Overwrites an element at position `index` within the vector.
+  ///
+  /// # Warning
+  ///
+  /// Must call [`mem::forget`] on the value being inserted or a double free
+  /// will occur.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `index > len`.
+  ///
+  /// Panics if `ty` != `self.ty()`
+  pub fn set_erased(&mut self, index:usize, ty:TypeInfo, ptr:*mut u8) {
+    if self.len == self.cap() {
+      self.buf.grow()
+    }
+
+    // Check whether the index is within bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+
+    self.assert_type_info_insert(ty);
+
+    unsafe {
+      // Copy the value as raw bits into the `ErasedVec`
+      ptr::copy_nonoverlapping(ptr, self.indexed_ptr(index), self.ty().size());
     }
 
     self.len += 1;

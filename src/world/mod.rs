@@ -1,8 +1,3 @@
-use std::{
-  cell::{Ref, RefCell, RefMut},
-  rc::Rc
-};
-
 use self::{
   entities::{EntitiesInner, Entity},
   query::query::Query,
@@ -80,17 +75,22 @@ impl World {
   /// Register type `T` as a component type.
   ///
   /// All types must be registered before they can be used as components.
-  pub fn register_component<T:EcsData>(&self) -> &Self {
-    self.entities.as_ref().borrow_mut().register_component::<T>();
+  pub fn register_component<T:EcsData>(&mut self) -> &mut Self {
+    self.entities.register_component::<T>();
     self
   }
 
   /// Prepares the ECS for the insertion of data into a new `Entity`.
   ///
   /// The entity is initalized without any associated components.
-  pub fn create_entity(&self) -> &Self {
-    self.entities.as_ref().borrow_mut().create_entity();
+  pub fn create_entity(&mut self) -> &mut Self {
+    self.entities.create_entity();
     self
+  }
+
+  /// Reserves and returns a new `Entity`.
+  pub fn reserve_entity(&mut self) -> Entity {
+    self.entities.create_entity()
   }
 
   /// Add a component of type `T` to the entity at `inserting_into_index`.
@@ -100,8 +100,8 @@ impl World {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_component<T:EcsData>(&self, data:T) -> Result<&Self> {
-    self.entities.as_ref().borrow_mut().with_component(data).unwrap();
+  pub fn with_component<T:EcsData>(&mut self, data:T) -> Result<&mut Self> {
+    self.entities.with_component(data).unwrap();
     Ok(self)
   }
 
@@ -112,18 +112,23 @@ impl World {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_components<T:Bundle>(&self, bundle:T) -> Result<()> {
-    self.entities.as_ref().borrow_mut().with_components(bundle)
+  pub fn with_components<T:Bundle>(&mut self, bundle:T) -> Result<()> {
+    self.entities.with_components(bundle)
   }
 
   /// Add a component to the entity.
-  pub fn add_component<T:EcsData>(&self, entity:Entity, data:T) -> Result<()> {
-    self.entities.as_ref().borrow_mut().add_component(entity, data)
+  pub fn add_component<T:EcsData>(&mut self, entity:Entity, data:T) -> Result<()> {
+    self.entities.add_component(entity, data)
+  }
+
+  /// Add a component to the entity.
+  pub fn add_component_erased(&mut self, entity:Entity, ty:TypeInfo, ptr:*mut u8) -> Result<()> {
+    self.entities.add_component_erased(entity, ty, ptr)
   }
 
   /// Add a [`Bundle`] of components to the entity.
-  pub fn add_components<T:Bundle>(&self, entity:Entity, components:T) -> Result<()> {
-    self.entities.as_ref().borrow_mut().add_components(entity, components)
+  pub fn add_components<T:Bundle>(&mut self, entity:Entity, components:T) -> Result<()> {
+    self.entities.add_components(entity, components)
   }
 
   /// Returns the component from the queried entity.
@@ -131,10 +136,17 @@ impl World {
   /// # Panics
   ///
   /// Panics if the entity does not have the requested component.
-  pub fn get_component<T:EcsData>(&self, entity:Entity) -> Result<Ref<T>> {
-    let entities = self.entities.as_ref().borrow();
-    if entities.has_component::<T>(entity).unwrap() {
-      return Ok(Ref::map(entities, |entities| entities.get_component::<T>(entity).unwrap()));
+  pub fn get_component<T:EcsData>(&self, entity:Entity) -> Result<&T> {
+    let ty = TypeInfo::of::<T>();
+    if self.entities.has_component::<T>(entity)? {
+      return Ok(
+        self
+          .entities
+          .components
+          .get(&ty)
+          .ok_or(EcsErrors::ComponentNotRegistered)?
+          .get::<T>(entity)
+      );
     } else {
       return Err(EcsErrors::ComponentDataDoesNotExist.into());
     }
@@ -144,11 +156,20 @@ impl World {
   ///
   /// # Panics
   ///
-  /// Panics if the entity does not have the requested component.
-  pub fn get_component_mut<T:EcsData>(&self, entity:Entity) -> Result<RefMut<T>> {
-    let entities = self.entities.as_ref().borrow_mut();
-    if entities.has_component::<T>(entity).unwrap() {
-      return Ok(RefMut::map(entities, |entities| entities.get_component_mut::<T>(entity).unwrap()));
+  /// - Panics if the entity does not have the requested component.
+  ///
+  /// - Panics if the component is already borrowed in scope.
+  pub fn get_component_mut<T:EcsData>(&self, entity:Entity) -> Result<&mut T> {
+    let ty = TypeInfo::of::<T>();
+    if self.entities.has_component::<T>(entity)? {
+      return Ok(
+        self
+          .entities
+          .components
+          .get(&ty)
+          .ok_or(EcsErrors::ComponentNotRegistered)?
+          .get_mut::<T>(entity)
+      );
     } else {
       return Err(EcsErrors::ComponentDataDoesNotExist.into());
     }
@@ -158,18 +179,18 @@ impl World {
   ///
   /// The next entity added will overwrite the emptied slot.
   pub fn delete_entity(&mut self, entity:Entity) -> Result<()> {
-    self.entities.as_ref().borrow_mut().delete_entity(entity)?;
+    self.entities.delete_entity(entity)?;
     Ok(())
   }
 
   /// Delete a component from the entity.
-  pub fn delete_component<T:EcsData>(&self, entity:Entity) -> Result<()> {
-    self.entities.as_ref().borrow_mut().delete_component::<T>(entity)
+  pub fn delete_component<T:EcsData>(&mut self, entity:Entity) -> Result<()> {
+    self.entities.delete_component::<T>(entity)
   }
 
   /// Delete a type-erased component from the entity.
-  pub fn delete_component_erased(&self, entity:Entity, ty:TypeInfo) -> Result<()> {
-    self.entities.as_ref().borrow_mut().delete_component_erased(entity, ty)
+  pub fn delete_component_erased(&mut self, entity:Entity, ty:TypeInfo) -> Result<()> {
+    self.entities.delete_component_erased(entity, ty)
   }
 }
 
@@ -185,7 +206,7 @@ impl World {
   pub fn command_buffer(&self) {}
 }
 
-type Entities = Rc<RefCell<EntitiesInner>>;
+type Entities = EntitiesInner;
 
 #[cfg(test)]
 mod tests {
@@ -200,7 +221,14 @@ mod tests {
     world.create_entity().with_components((Health(100.2), Armor(44))).unwrap();
     world.create_entity().with_component(Health(540.2)).unwrap();
 
-    some_system(&world);
+    let p1_health = world.get_component::<Health>(0).unwrap();
+    assert_eq!(p1_health.0, 100.2);
+
+    let p1_health = world.get_component_mut::<Health>(1).unwrap();
+    p1_health.0 = 100.0;
+    assert_eq!(p1_health.0, 100.0);
+
+    // some_system(&world);
   }
 
   fn some_system(world:&World) {

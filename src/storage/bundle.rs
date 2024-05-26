@@ -6,6 +6,10 @@ use std::mem;
 pub trait Bundle {
   ///Takes a callback that moves components out of the bundle one-by-one.
   unsafe fn put(self, f:impl FnMut(*mut u8, TypeInfo) -> Result<()>) -> Result<()>;
+
+  ///Returns a [`Vec`] containing the [`TypeInfo`] of all the components in the
+  /// bundle.
+  fn types() -> Vec<TypeInfo>;
 }
 
 macro_rules! impl_tuple {
@@ -23,6 +27,16 @@ macro_rules! impl_tuple {
           mem::forget($name);
         )*
         Ok(())
+      }
+
+
+      #[allow(unused_variables, unused_mut)]
+      fn types()->Vec<TypeInfo>{
+        let mut types = Vec::new();
+        $(
+          types.push(TypeInfo::of::<$name>());
+        )*
+        types
       }
     }
   };
