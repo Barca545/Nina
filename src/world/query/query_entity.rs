@@ -31,7 +31,13 @@ impl<'a> QueryEntity<'a> {
       // because they are redundant
       return Ok(unsafe { &*components.indexed_ptr::<T>(self.id) });
     } else {
-      return Err(EcsErrors::ComponentDataDoesNotExist.into());
+      return Err(
+        EcsErrors::ComponentDataDoesNotExist {
+          entity:self.id,
+          ty:ty.name()
+        }
+        .into()
+      );
     }
   }
 
@@ -50,7 +56,13 @@ impl<'a> QueryEntity<'a> {
       // because they are redundant
       return Ok(unsafe { &mut *components.indexed_ptr::<T>(self.id) });
     } else {
-      return Err(EcsErrors::ComponentDataDoesNotExist.into());
+      return Err(
+        EcsErrors::ComponentDataDoesNotExist {
+          entity:self.id,
+          ty:ty.name()
+        }
+        .into()
+      );
     }
   }
 }

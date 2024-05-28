@@ -24,7 +24,6 @@
 #![feature(slice_index_methods)]
 #![allow(dead_code)]
 
-// mod erased_vec;
 mod errors;
 
 pub mod storage;
@@ -32,10 +31,7 @@ pub mod world;
 
 // Refactor
 // -Fix the crate imports
-// -Rename the world crate to ecs and have it be the only export from nina as
-// use self
-// -I think it's worth moving Arena and some
+// -I think it's worth moving Arena into storage
 
 // To Do
-// -Remove the refcell around Entities
 // -Add command buffer

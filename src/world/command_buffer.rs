@@ -1,51 +1,27 @@
-use std::{alloc::Layout, ptr::NonNull};
-
-use crate::storage::{Bundle, EcsData, TypeInfo};
-
 use super::{entities::Entity, World};
+use crate::storage::{Bundle, EcsData, NoDropTuple, TypeInfo};
 
 /// Records operations for future application to a World
 ///
 /// Useful when operations cannot be applied directly due to ordering concerns
 /// or borrow checking.
-pub struct CommandBuffer {
-  commands:Vec<Command>,
-  storage:NonNull<u8>,
-  layout:Layout,
-  cursor:usize,
-  // components:Vec<ComponentInfo>,
-  ids:Vec<TypeInfo>
-}
+pub struct CommandBuffer(Vec<Command>);
 
 impl CommandBuffer {
   pub fn new() -> Self {
-    CommandBuffer {
-      commands:Default::default(),
-      storage:NonNull::dangling(),
-      layout:Layout::from_size_align(0, 8).unwrap(),
-      cursor:0,
-      ids:Vec::new()
-    }
+    CommandBuffer(Default::default())
   }
 
   pub fn spawn_entity<T:Bundle>(&mut self, components:T) {
-    let mut insert_info = InsertInfo {
+    let insert_info = InsertInfo {
       entity:None,
-      components:Vec::new()
+      components:NoDropTuple::new(components)
     };
-    unsafe {
-      components
-        .put(|ptr, ty| {
-          insert_info.components.push((ty, ptr));
-          Ok(())
-        })
-        .unwrap();
-    }
-    self.commands.push(Command::InsertOrSpawn(insert_info))
+    self.0.push(Command::InsertOrSpawn(insert_info))
   }
 
   pub fn delete_entity(&mut self, entity:Entity) {
-    self.commands.push(Command::DeleteEntity(entity));
+    self.0.push(Command::DeleteEntity(entity));
   }
 
   pub fn insert_component<T:EcsData>(&mut self, entity:Entity, component:T) {
@@ -53,19 +29,11 @@ impl CommandBuffer {
   }
 
   pub fn insert_components<T:Bundle>(&mut self, entity:Entity, components:T) {
-    let mut insert_info = InsertInfo {
+    let insert_info = InsertInfo {
       entity:Some(entity),
-      components:Vec::new()
+      components:NoDropTuple::new(components)
     };
-    unsafe {
-      components
-        .put(|ptr, ty| {
-          insert_info.components.push((ty, ptr));
-          Ok(())
-        })
-        .unwrap();
-    }
-    self.commands.push(Command::InsertOrSpawn(insert_info))
+    self.0.push(Command::InsertOrSpawn(insert_info))
   }
 
   /// Removes the component specified by the generic parameter.
@@ -78,19 +46,20 @@ impl CommandBuffer {
   /// Enter Components as a [`Bundle`].
   pub fn remove_components<T:Bundle>(&mut self, entity:Entity) {
     let remove_info = RemoveInfo { entity, tys:T::types() };
-    self.commands.push(Command::RemoveComponent(remove_info))
+    self.0.push(Command::RemoveComponent(remove_info))
   }
 
   pub fn run(&mut self, world:&mut World) {
-    for cmd in &self.commands {
+    for cmd in &self.0 {
       match cmd {
         Command::InsertOrSpawn(insert_info) => {
           let entity = match insert_info.entity {
             Some(entity) => entity,
             None => world.reserve_entity()
           };
-          for (ty, ptr) in &insert_info.components {
-            world.add_component_erased(entity, *ty, *ptr).unwrap();
+          for index in 0..insert_info.components.len() {
+            let (ty, ptr) = insert_info.components.get(index);
+            world.add_component_erased(entity, ty, ptr).unwrap();
           }
         }
         Command::RemoveComponent(remove_info) => {
@@ -121,23 +90,17 @@ struct RemoveInfo {
 
 struct InsertInfo {
   entity:Option<Entity>,
-  components:Vec<(TypeInfo, *mut u8)>
+  components:NoDropTuple
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::{
-    storage::{Bundle, TypeInfo},
-    world::{command_buffer::CommandBuffer, World}
-  };
+  use crate::world::{command_buffer::CommandBuffer, World};
 
-  #[test]
-  fn get_type_info_from_bundle() {
-    let bundle_tys = <(u32, f32, String)>::types();
-    assert_eq!(bundle_tys[0], TypeInfo::of::<u32>());
-    assert_eq!(bundle_tys[1], TypeInfo::of::<f32>());
-    assert_eq!(bundle_tys[2], TypeInfo::of::<String>());
-  }
+  //miri is still erroring but the test passes,
+  // somehow the pointer to the string it tries to drop is incorrect (zero) unsure
+  // how that happens as I believe it should invalidate other operations too...
+  // only happens for vecs
 
   #[test]
   fn insert_into_entities() {
@@ -149,38 +112,31 @@ mod tests {
       .register_component::<f32>();
 
     let mut buffer = CommandBuffer::new();
-    let ent = world.reserve_entity();
-    let enta = world.reserve_entity();
-    let entb = world.reserve_entity();
-    let entc = world.reserve_entity();
-    buffer.insert_components(ent, (true, "a".to_string()));
-    buffer.insert_components(entc, (false, "a".to_string()));
-    buffer.insert_components(enta, (1_u32, 1.0_f32));
-    buffer.insert_components(entb, (1.0_f32, "a".to_string()));
-    // world.add_components(ent, (true, "a".to_string()));
-    // world.add_components(entc, (false, "a".to_string()));
-    // world.add_components(enta, (1_u32, 1.0_f32));
-    // world.add_components(entb, (1.0_f32, "a".to_string()));
+
+    buffer.spawn_entity((true, "a".to_string()));
+    buffer.spawn_entity((1_u32, 1.0_f32));
+    buffer.spawn_entity((true, "a".to_string()));
+    buffer.spawn_entity((1.0_f32, "a".to_string()));
     buffer.run(&mut world);
 
-    let bool_1 = world.get_component::<bool>(ent).unwrap();
-    let string_1 = world.get_component::<String>(ent).unwrap();
-    assert_eq!(*bool_1, true);
-    assert_eq!(*string_1, "a".to_string());
+    let bool_0 = world.get_component::<bool>(0).unwrap();
+    let string_0 = world.get_component::<String>(0).unwrap();
+    assert_eq!(*bool_0, true);
+    assert_eq!(*string_0, "a".to_string());
 
-    let u32_a = world.get_component::<u32>(enta).unwrap();
-    let f32_a = world.get_component::<f32>(enta).unwrap();
-    assert_eq!(*u32_a, 1);
-    assert_eq!(*f32_a, 1.0_f32);
+    let u32_1 = world.get_component::<u32>(1).unwrap();
+    let uf32_1 = world.get_component::<f32>(1).unwrap();
+    assert_eq!(*u32_1, 1);
+    assert_eq!(*uf32_1, 1.0);
 
-    // let f32_b = world.get_component::<f32>(entb).unwrap();
-    // let string_b = world.get_component::<String>(entb).unwrap();
-    // assert_eq!(*f32_b, 1.0_f32);
-    // assert_eq!(*string_b, "a".to_string());
+    let bool_2 = world.get_component::<bool>(2).unwrap();
+    let string_2 = world.get_component::<String>(2).unwrap();
+    assert_eq!(*bool_2, true);
+    assert_eq!(*string_2, "a".to_string());
 
-    // let bool_c = world.get_component::<bool>(entc).unwrap();
-    // let string_c = world.get_component::<String>(entc).unwrap();
-    // assert_eq!(*bool_c, false);
-    // assert_eq!(*string_c, "a".to_string());
+    let f32_3 = world.get_component::<f32>(3).unwrap();
+    let string_3 = world.get_component::<String>(3).unwrap();
+    assert_eq!(*f32_3, 1.0);
+    assert_eq!(*string_3, "a".to_string());
   }
 }

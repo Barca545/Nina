@@ -8,7 +8,7 @@ pub enum TypeInfoErrors {
 
 #[derive(Debug, Error)]
 pub enum ErasedVecErrors {
-  #[error("This DenseVec does not contain data of type {0:?}.")]
+  #[error("This vector does not contain data of type {0:?}.")]
   DoesNotContainType(String),
   #[error("Cannot insert type {insert_type:?} into vector of type {vec_type:?}.")]
   IncorrectTypeInsertion { insert_type:String, vec_type:String },
@@ -33,8 +33,8 @@ pub enum EcsErrors {
   EntityDoesNotExist,
   #[error("Attempted to access {component:?} which does not exist")]
   ResourceDataDoesNotExist { component:String },
-  #[error("Attempted to use component data that does not exist")]
-  ComponentDataDoesNotExist,
+  #[error("Attempted to use component data that does not exist. Entity \"{entity}\" does not contain a component of type \"{ty}\".")]
+  ComponentDataDoesNotExist { entity:usize, ty:String },
   #[error("Attempted to downcast component to the wrong type")]
   DowncastToWrongType,
   #[error("No resource found at given path")]

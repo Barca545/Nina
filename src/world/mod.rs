@@ -46,7 +46,7 @@ impl World {
     self
   }
 
-  ///Query a resource by type and get a [`Ref<T>`].
+  ///Query a resource by type and get a reference.
   ///
   /// # Panics
   ///
@@ -83,6 +83,10 @@ impl World {
   /// Prepares the ECS for the insertion of data into a new `Entity`.
   ///
   /// The entity is initalized without any associated components.
+  ///
+  /// # Warning
+  ///
+  /// A component must be added to an entity.
   pub fn create_entity(&mut self) -> &mut Self {
     self.entities.create_entity();
     self
@@ -148,7 +152,7 @@ impl World {
           .get::<T>(entity)
       );
     } else {
-      return Err(EcsErrors::ComponentDataDoesNotExist.into());
+      return Err(EcsErrors::ComponentDataDoesNotExist { entity, ty:ty.name() }.into());
     }
   }
 
@@ -171,7 +175,7 @@ impl World {
           .get_mut::<T>(entity)
       );
     } else {
-      return Err(EcsErrors::ComponentDataDoesNotExist.into());
+      return Err(EcsErrors::ComponentDataDoesNotExist { entity, ty:ty.name() }.into());
     }
   }
 

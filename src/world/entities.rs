@@ -7,6 +7,10 @@ use eyre::Result;
 // Refactor:
 // -Implement tests for inserting and deleting erased
 // -Add add_components_erased, delete_components_erased, and with_components
+// -Add a reserved_entity field to hold ids that have been reserved but not
+// populated. Check if an entity is contained in that field during creation and
+// skip it when assigning a new one. Remove id from field once it has something
+// added to it.
 
 pub type Entity = usize;
 
@@ -34,6 +38,9 @@ impl EntitiesInner {
   }
 
   /// Returns the next free entity id for insertion.
+  ///
+  /// # Warning
+  /// - Entities must be initalized with a component.
   pub fn create_entity(&mut self) -> Entity {
     if let Some((index, _)) = self.map.iter().enumerate().find(|(_index, mask)| **mask == 0) {
       self.inserting_into_index = index;
@@ -52,8 +59,7 @@ impl EntitiesInner {
   /// Updates the entity's bitmap.
   ///
   /// # Panics
-  ///
-  /// Panics if `T` has not been registered.
+  /// - Panics if `T` has not been registered.
   pub fn with_component<T:EcsData>(&mut self, data:T) -> Result<()> {
     let ty = TypeInfo::of::<T>();
     let index = self.inserting_into_index;
@@ -76,8 +82,7 @@ impl EntitiesInner {
   /// Updates the entity's bitmap.
   ///
   /// # Panics
-  ///
-  /// Panics if `T` has not been registered.
+  /// - Panics if `T` has not been registered.
   pub fn with_components<T:Bundle>(&mut self, components:T) -> Result<()> {
     unsafe {
       components.put(|ptr, ty| {
@@ -118,8 +123,7 @@ impl EntitiesInner {
   /// Updates the entity's bitmap.
   ///
   /// # Panics
-  ///
-  /// Panics if `T` has not been registered.
+  /// - Panics if `T` has not been registered.
   pub fn add_component<T:EcsData>(&mut self, entity:Entity, component:T) -> Result<()> {
     let ty = TypeInfo::of::<T>();
 
@@ -139,8 +143,7 @@ impl EntitiesInner {
   /// Updates the entity's bitmap.
   ///
   /// # Panics
-  ///
-  /// Panics if `T` has not been registered.
+  /// - Panics if `T` has not been registered.
   pub fn add_component_erased(&mut self, entity:Entity, ty:TypeInfo, ptr:*mut u8) -> Result<()> {
     if let Some(components) = self.components.get_mut(&ty) {
       components.set_erased(entity, ty, ptr);
@@ -156,13 +159,12 @@ impl EntitiesInner {
   /// Add a [`Bundle`] of components to the provided entity.
   ///
   /// # Panics
-  ///
-  /// Panics if a component's type has not been registered.
+  /// - Panics if a component's type has not been registered.
   pub fn add_components<T:Bundle>(&mut self, entity:Entity, components:T) -> Result<()> {
     unsafe {
       components.put(|ptr, ty| {
         if let Some(components) = self.components.get_mut(&ty) {
-          components.set_erased(entity, ty, ptr);
+          components.reset_erased(entity, ty, ptr);
 
           let bitmask = self.bitmasks.get(&ty).unwrap();
           self.map[entity] |= *bitmask;
@@ -197,8 +199,7 @@ impl EntitiesInner {
   /// [`Result<bool>`].
   ///
   /// # Panics
-  ///
-  /// Panics if the component was never registered;
+  /// - Panics if the component was never registered;
   pub fn has_component<T:EcsData>(&self, entity:Entity) -> Result<bool> {
     let ty = TypeInfo::of::<T>();
 
@@ -285,8 +286,10 @@ mod tests {
 
     entities.create_entity();
 
-    entities.with_components((Health(99), Speed(45), vec![11_u16, 13_u16]))?;
+    entities.with_components((Health(900), Speed(1), vec![76_u16, 54_u16]))?;
 
+    // set erased needs to call the destructor on the memory block before
+    // overwriting
     entities.add_components(0, (Health(100), Speed(15), vec![15_u16, 12_u16])).unwrap();
 
     let borrowed_healths = entities.components.get(&TypeInfo::of::<Health>()).unwrap();
@@ -296,8 +299,14 @@ mod tests {
     let speed = borrowed_speeds.get::<Speed>(0);
     assert_eq!(speed.0, 15);
     let borrowed_vec = entities.components.get(&TypeInfo::of::<Vec<u16>>()).unwrap();
-    let vec = borrowed_vec.get::<Vec<u16>>(0);
+    let vec = borrowed_vec.get_mut::<Vec<u16>>(0);
     assert_eq!(vec[0], 15_u16);
+    assert_eq!(vec[1], 12_u16);
+    vec[0] = 20;
+
+    let borrowed_vec = entities.components.get(&TypeInfo::of::<Vec<u16>>()).unwrap();
+    let vec = borrowed_vec.get_mut::<Vec<u16>>(0);
+    assert_eq!(vec[0], 20_u16);
     assert_eq!(vec[1], 12_u16);
 
     Ok(())
@@ -372,6 +381,25 @@ mod tests {
 
   #[test]
   fn add_component_to_entity_by_id() -> Result<()> {
+    let speed_ty = TypeInfo::of::<Speed>();
+    // Check normal adding works
+    {
+      let mut entities = EntitiesInner::default();
+
+      entities.register_component::<Health>();
+      entities.register_component::<Speed>();
+
+      entities.create_entity();
+      entities.with_component(Health(100))?;
+      entities.add_component(0, Speed(50))?;
+
+      let borrowed_speeds = entities.components.get(&speed_ty).unwrap();
+      let speed = borrowed_speeds.get::<Speed>(0);
+      assert_eq!(entities.map[0], 3);
+      assert_eq!(speed.0, 50);
+    }
+
+    // Check adding erased works
     let mut entities = EntitiesInner::default();
 
     entities.register_component::<Health>();
@@ -379,17 +407,21 @@ mod tests {
 
     entities.create_entity();
     entities.with_component(Health(100))?;
+    entities.add_component_erased(0, speed_ty, (&mut Speed(50) as *mut Speed).cast())?;
 
-    //how are we finding the entity's id?
-    entities.add_component(0, Speed(50))?;
+    entities.create_entity();
+    entities.with_component(Health(100))?;
+    entities.add_component_erased(1, speed_ty, (&mut Speed(90) as *mut Speed).cast())?;
 
-    assert_eq!(entities.map[0], 3);
-
-    let speed_ty = TypeInfo::of::<Speed>();
+    // Check Entity speeds
     let borrowed_speeds = entities.components.get(&speed_ty).unwrap();
-    let speed = borrowed_speeds.get::<Speed>(0);
+    let speed_1 = borrowed_speeds.get::<Speed>(0);
+    assert_eq!(entities.map[0], 3);
+    assert_eq!(speed_1.0, 50);
 
-    assert_eq!(speed.0, 50);
+    let speed_2 = borrowed_speeds.get::<Speed>(1);
+    assert_eq!(entities.map[1], 3);
+    assert_eq!(speed_2.0, 90);
 
     Ok(())
   }

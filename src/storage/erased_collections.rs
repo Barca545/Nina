@@ -1,29 +1,38 @@
-use super::type_info::TypeInfo;
+use super::{type_info::TypeInfo, Bundle};
 use crate::errors::ErasedVecErrors::{DoesNotContainType, ErasedVecAllocError, ErasedVecCapacityOverflow, IncorrectTypeInsertion, IndexOutOfBounds};
 use std::{
-  alloc, mem,
+  alloc::{self, Layout},
+  mem,
   ptr::{self, NonNull}
 };
 
 // Refactor:
 // -No `pop` method. Unsure it is needed.
 // -No `remove` method. Unsure it is needed.
-// -Rename this collections
 
 struct RawErasedVec {
+  ty:TypeInfo,
   ptr:NonNull<u8>,
-  cap:usize,
-  ty:TypeInfo
+  cap:usize
 }
 
 impl RawErasedVec {
   fn new<T:'static>() -> Self {
     let ty = TypeInfo::of::<T>();
-    let cap = if ty.size() == 0 { usize::MAX } else { 0 };
     let ptr = NonNull::dangling();
+    let cap = if ty.size() == 0 { usize::MAX } else { 0 };
 
     RawErasedVec { ptr, cap, ty }
   }
+
+  fn new_erased(ty:TypeInfo) -> Self {
+    RawErasedVec {
+      ty,
+      ptr:NonNull::dangling(),
+      cap:0
+    }
+  }
+
   fn grow_exact(&mut self, cap:usize) {
     // since we set the capacity to usize::MAX when `ty` has size 0,
     // getting to here necessarily means the Vec is overfull.
@@ -65,8 +74,6 @@ impl RawErasedVec {
 impl Drop for RawErasedVec {
   fn drop(&mut self) {
     if self.cap != 0 && self.ty.size() != 0 {
-      // unsafe { self.ty.drop(self.ptr.as_ptr()) }
-
       // Deallocate the buffer
       let layout = self.ty.array(self.cap).unwrap();
       unsafe { alloc::dealloc(self.ptr.as_ptr(), layout) }
@@ -98,14 +105,13 @@ impl ErasedVec {
   /// Returns a ptr to the value stored at the requested index.
   ///
   /// # Warning
-  ///
-  /// The pointer is calculated using the internal [`TypeInfo`].
+  /// - The pointer is calculated using the internal [`TypeInfo`].
   pub unsafe fn indexed_ptr<T:'static>(&self, index:usize) -> *mut T {
     let index = index * self.ty().size();
     self.ptr().add(index) as *mut T
   }
 
-  fn ty(&self) -> TypeInfo {
+  pub fn ty(&self) -> TypeInfo {
     self.buf.ty
   }
 
@@ -122,11 +128,9 @@ impl ErasedVec {
   ///Fetch data from the [`ErasedVec`] by index.
   ///
   /// # Panics
-  ///
-  /// Panics if the [`TypeInfo`] of the value does not match the type contained
-  /// in the `ErasedVec`.
-  ///
-  /// Panics if `index` > `self.len`.
+  /// - Panics if the [`TypeInfo`] of the value does not match the type
+  ///   contained in the `ErasedVec`.
+  /// - Panics if `index` > `self.len`.
   pub fn get<T:'static>(&self, index:usize) -> &T {
     // Confirm the vector contains `T`
     self.assert_type_info(TypeInfo::of::<T>());
@@ -141,12 +145,10 @@ impl ErasedVec {
   ///Fetch data from the [`ErasedVec`] by index.
   ///
   /// # Warning
-  ///
-  /// Does not check whether the `ErasedVec` contains the requested type `T`.
+  /// - Does not check whether the `ErasedVec` contains the requested type `T`.
   ///
   /// # Panics
-  ///
-  /// Panics if `index` > `self.len`.
+  /// - Panics if `index` > `self.len`.
   pub unsafe fn get_unchecked<T:'static>(&self, index:usize) -> &T {
     // Confirm the index is in bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
@@ -158,11 +160,10 @@ impl ErasedVec {
   ///Fetch data mutably from the [`ErasedVec`] by index.
   ///
   /// # Panics
-  ///
-  /// Panics if the [`TypeInfo`] of the value does not match the type contained
+  /// - Panics if the [`TypeInfo`] of the value does not match the type
+  ///   contained
   /// in the `ErasedVec`.
-  ///
-  /// Panics if `index` > `self.len`.
+  /// - Panics if `index` > `self.len`.
   pub fn get_mut<T:'static>(&self, index:usize) -> &mut T {
     // Confirm the vector contains `T`
     self.assert_type_info(TypeInfo::of::<T>());
@@ -177,12 +178,10 @@ impl ErasedVec {
   ///Fetch data mutably sfrom the [`ErasedVec`] by index.
   ///
   /// # Warning
-  ///
-  /// Does not check whether the `ErasedVec` contains the requested type `T`.
+  /// - Does not check whether the `ErasedVec` contains the requested type `T`.
   ///
   /// # Panics
-  ///
-  /// Panics if `index` > `self.len`.
+  /// - Panics if `index` > `self.len`.
   pub unsafe fn get_mut_unchecked<T:'static + Send + Sync>(&self, index:usize) -> &mut T {
     // Confirm the index is in bounds
     assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
@@ -195,8 +194,7 @@ impl ErasedVec {
   /// [`ErasedVec`].
   ///
   /// # Warning
-  ///
-  /// Data is padded with 0s, attempting to access it before it is overwritten
+  /// - Data is padded with 0s, attempting to access it before it is overwritten
   /// with a value of type `T` will cause undefined behavior.
   pub fn pad(&mut self) {
     let mut padding:Vec<u8> = Vec::new();
@@ -233,13 +231,12 @@ impl ErasedVec {
   ///Append a type-erased value to the back of the [`ErasedVec`].
   ///
   /// # Warning
-  ///
-  /// Must call [`mem::forget`] on the value being inserted or a double free
+  /// - Must call [`mem::forget`] on the value being inserted or a double free
   /// will occur.
   ///
   /// # Panics
-  ///
-  /// Panics if the [`TypeInfo`] of the value does not match the type contained
+  /// - Panics if the [`TypeInfo`] of the value does not match the type
+  ///   contained
   /// in the `ErasedVec`.
   pub fn push_erased(&mut self, val_ptr:*mut u8, ty:TypeInfo) {
     // Grow the Vec if it is at max capacity
@@ -263,8 +260,7 @@ impl ErasedVec {
   /// elements after it to the right.
   ///
   /// # Panics
-  ///
-  /// Panics if `index > len`.
+  /// - Panics if `index > len`.
   pub fn insert<T:'static>(&mut self, index:usize, value:T) {
     self.assert_type_info_insert(TypeInfo::of::<T>());
 
@@ -293,14 +289,13 @@ impl ErasedVec {
   ///
   /// # Warning
   ///
-  /// Must call [`mem::forget`] on the value being inserted or a double free
+  /// - Must call [`mem::forget`] on the value being inserted or a double free
   /// will occur.
   ///
   /// # Panics
   ///
-  /// Panics if `index > len`.
-  ///
-  /// Panics if `ty` != `self.ty()`
+  /// - Panics if `index > len`.
+  /// - Panics if `ty` != `self.ty()`
   pub fn insert_erased(&mut self, val_ptr:*mut u8, ty:TypeInfo, index:usize) {
     if self.len == self.cap() {
       self.buf.grow()
@@ -328,9 +323,8 @@ impl ErasedVec {
   ///
   /// # Panics
   ///
-  /// Panics if `index > len`.
-  ///
-  /// Panics if `ty` != `self.ty()`
+  /// - Panics if `index > len`.
+  /// - Panics if `ty` != `self.ty()`
   pub fn set<T:'static>(&mut self, index:usize, data:T) {
     self.assert_type_info_insert(TypeInfo::of::<T>());
 
@@ -345,22 +339,20 @@ impl ErasedVec {
       let val_ptr = (&data as *const T).cast::<u8>();
       ptr::copy_nonoverlapping(val_ptr, self.indexed_ptr(index), self.ty().size());
     }
-
-    self.len += 1;
   }
 
-  /// Overwrites an element at position `index` within the vector.
+  /// Sets the `index` within the vector.
   ///
   /// # Warning
-  ///
-  /// Must call [`mem::forget`] on the value being inserted or a double free
-  /// will occur.
+  /// - Must call [`mem::forget`] on the value or wrap it in a
+  /// [`mem::ManuallyDrop`] or a double free will occur.
+  /// - If reassigning an index, must use [`Self::clear`] to reset the data
+  ///   currently stored at the index. Prefer to use [`Self::reset_erased`] to
+  ///   reset an index
   ///
   /// # Panics
-  ///
-  /// Panics if `index > len`.
-  ///
-  /// Panics if `ty` != `self.ty()`
+  /// - Panics if `index > len`.
+  /// - Panics if `ty` != `self.ty()`
   pub fn set_erased(&mut self, index:usize, ty:TypeInfo, ptr:*mut u8) {
     if self.len == self.cap() {
       self.buf.grow()
@@ -371,12 +363,36 @@ impl ErasedVec {
 
     self.assert_type_info_insert(ty);
 
+    // Destroy the data currently there. This is unnecessary for non-collection
+    // types but collections cause a leak unless destroyed.
+
     unsafe {
       // Copy the value as raw bits into the `ErasedVec`
       ptr::copy_nonoverlapping(ptr, self.indexed_ptr(index), self.ty().size());
     }
+  }
 
-    self.len += 1;
+  /// Sets the `index` within the vector.
+  ///
+  /// Destroys the data currently at `index` to prevent leaking.
+  ///
+  /// # Panics
+  /// - Panics if `index > len`.
+  /// - Panics if `ty` != `self.ty()`
+  pub fn reset_erased(&mut self, index:usize, ty:TypeInfo, ptr:*mut u8) {
+    unsafe { self.clear(index) };
+    self.set_erased(index, ty, ptr);
+  }
+
+  /// Drops the value stored at a given index.
+  ///
+  /// # Panics
+  /// - Panics if the index is out of bounds.
+  pub unsafe fn clear(&self, index:usize) {
+    // Check whether the index is within bounds
+    assert!(index <= self.len, "{}", IndexOutOfBounds { len:self.len, index });
+
+    self.ty().drop(self.indexed_ptr(index));
   }
 
   ///Panics if the queried [`TypeInfo`] is not the same as the data the
@@ -410,6 +426,7 @@ impl Drop for ErasedVec {
 
 pub struct ErasedBox(RawErasedVec);
 
+/// A type erased box used for storing data in the ECS.
 impl ErasedBox {
   pub fn new<T:'static>(value:T) -> Self {
     // Create the buf
@@ -428,11 +445,25 @@ impl ErasedBox {
     ErasedBox(buf)
   }
 
-  fn ptr(&self) -> *mut u8 {
+  pub fn from_raw_parts(ty:TypeInfo, ptr:*mut u8) -> Self {
+    // Create the buf
+    let mut buf = RawErasedVec::new_erased(ty);
+    buf.grow_exact(1);
+
+    // Allocate space in the buf and insert the data into it
+    unsafe {
+      // Copy the value as raw bits into the `RawErasedVec` buf
+      ptr::copy_nonoverlapping(ptr.cast::<u8>(), buf.ptr.as_ptr(), buf.ty.size());
+    }
+
+    ErasedBox(buf)
+  }
+
+  pub fn ptr(&self) -> *mut u8 {
     self.0.ptr.as_ptr()
   }
 
-  fn ty(&self) -> TypeInfo {
+  pub fn ty(&self) -> TypeInfo {
     self.0.ty
   }
 
@@ -482,13 +513,98 @@ impl Drop for ErasedBox {
   }
 }
 
+///A structure for storing and retreiving tuple data without dropping the
+/// underlying data when the tuple is dropped.
+pub struct NoDropTuple {
+  buf:NonNull<u8>,
+  layout:Layout,
+  tys:Vec<TypeInfo>,
+  field_size:usize,
+  len:usize
+}
+
+impl NoDropTuple {
+  pub fn new<T:Bundle>(tuple:T) -> Self {
+    // Create the "tuple"
+    let mut no_drop = NoDropTuple {
+      buf:NonNull::dangling(),
+      layout:unsafe { Layout::from_size_align_unchecked(0, 2) },
+      tys:T::types(),
+      field_size:0,
+      len:T::LENGTH
+    };
+
+    // Size of the `NoDropTuple`'s largest element
+    no_drop.field_size = no_drop.tys.iter().max_by(|ty_1, ty_2| ty_1.size().cmp(&ty_2.size())).unwrap().size();
+    // Align of the `NoDropTuple`'s largest element
+    let align = no_drop
+      .tys
+      .iter()
+      .max_by(|ty_1, ty_2| ty_1.layout().align().cmp(&ty_2.layout().align()))
+      .unwrap()
+      .layout()
+      .align();
+
+    // Update the layout
+    // `NoDropTuple`'s size is the size of the largest element * the number of
+    // elements
+    no_drop.layout = Layout::from_size_align(no_drop.field_size * no_drop.len, align).unwrap();
+
+    // Allocate space
+    no_drop.buf = match NonNull::new(unsafe { alloc::alloc(no_drop.layout) }) {
+      Some(p) => p,
+      None => alloc::handle_alloc_error(no_drop.layout)
+    };
+
+    // Copy tuple data into the allocated space
+    let mut cursor = 0;
+    unsafe {
+      tuple
+        .put(|ptr, ty| {
+          // Copy the data to its "field" in the `NoDropTuple`
+          ptr::copy_nonoverlapping(ptr, no_drop.ptr().add(cursor * no_drop.field_size), ty.size());
+
+          //Iterate the cursor
+          cursor += 1;
+          Ok(())
+        })
+        .unwrap()
+    };
+
+    no_drop
+  }
+
+  fn ptr(&self) -> *mut u8 {
+    self.buf.as_ptr()
+  }
+
+  pub fn len(&self) -> usize {
+    self.len
+  }
+
+  ///Returns the [`TypeInfo`] and pointer of the item stored in the tuple at
+  /// the requested index.
+  pub fn get(&self, index:usize) -> (TypeInfo, *mut u8) {
+    let ty = self.tys[index];
+    let ptr = unsafe { self.ptr().add(self.field_size * index) };
+    (ty, ptr)
+  }
+}
+
+impl Drop for NoDropTuple {
+  fn drop(&mut self) {
+    // Deallocate the buffer but do not call drop on the buff's contents
+    unsafe { alloc::dealloc(self.ptr(), self.layout) }
+  }
+}
+
 #[cfg(test)]
 mod test {
-  use super::ErasedVec;
+  use super::*;
   use crate::storage::type_info::TypeInfo;
 
   #[test]
-  fn push_into_and_read() {
+  fn push_into_erasedvec_and_read() {
     let health_1 = Health::new(100);
     let health_2 = Health::new(5483392);
     let health_3 = Health::new(25);
@@ -536,7 +652,7 @@ mod test {
   }
 
   #[test]
-  fn push_zst_into_and_read() {
+  fn push_zst_into_erasedvec_and_read() {
     let mut player_vec = ErasedVec::new::<Player>();
     player_vec.push(Player);
     player_vec.push(Player);
@@ -577,10 +693,8 @@ mod test {
     assert_eq!(unsafe { *player_vec.get_unchecked::<[u8; 0]>(5) }, []);
   }
 
-  //This is the source of the error
-  //Something with the drop logic of collections is the problem
   #[test]
-  fn push_collection_into_and_read() {
+  fn push_collection_into_erasedvec_and_read() {
     //Check pushing normally works
     let mut path_vec = ErasedVec::new::<Path>();
     let path_1 = Path::new(vec![[0.0, 9222.444], [3.432, 5933.9999999], [3.484, 19444.333]]);
@@ -626,7 +740,7 @@ mod test {
   }
 
   #[test]
-  fn inserting_into_works() {
+  fn inserting_erasedvec_into_works() {
     let mut health_vec = ErasedVec::new::<Health>();
     let health_1 = Health::new(100);
     let health_2 = Health::new(5483392);
@@ -663,7 +777,7 @@ mod test {
   }
 
   #[test]
-  fn padding_works() {
+  fn padding_erasedvec_works() {
     let mut vec = ErasedVec::new::<Health>();
     vec.pad();
     vec.push(Health::new(400));
@@ -671,6 +785,42 @@ mod test {
     assert_eq!(&[0; 8], data);
     let health = vec.get::<Health>(1);
     assert_eq!(health.max, 400);
+  }
+
+  #[test]
+  fn fetching_item_from_nodroptuple_after_drop_works() {
+    let data = ("a".to_string(), 13.0_f32, 15_u128, 16_usize);
+    let string = {
+      let tuple = NoDropTuple::new(data);
+
+      // Fetch the string
+      let string_data = tuple.get(0);
+      let string = unsafe { ptr::read(string_data.1 as *const String) };
+      assert_eq!(string_data.0, TypeInfo::of::<String>());
+      assert_eq!(string, "a");
+
+      // Fetch the f32
+      let float_data = tuple.get(1);
+      let float = unsafe { ptr::read(float_data.1 as *const f32) };
+      assert_eq!(float_data.0, TypeInfo::of::<f32>());
+      assert_eq!(float, 13.0);
+
+      // Fetch the u128
+      let u128_data = tuple.get(2);
+      let u128 = unsafe { *(u128_data.1 as *const u128) };
+      assert_eq!(u128_data.0, TypeInfo::of::<u128>());
+      assert_eq!(u128, 15_u128);
+
+      // Fetch the usize (64bits)
+      let usize_data = tuple.get(3);
+      let usize = unsafe { ptr::read(usize_data.1 as *const usize) };
+      assert_eq!(usize_data.0, TypeInfo::of::<usize>());
+      assert_eq!(usize, 16_usize);
+
+      string
+    };
+    // Confirm the string data remains in place even after the tuple is dropped
+    assert_eq!(string, "a");
   }
 
   #[derive(Debug, PartialEq, PartialOrd)]
