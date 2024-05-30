@@ -12,7 +12,8 @@ impl CommandBuffer {
     CommandBuffer(Default::default())
   }
 
-  pub fn spawn_entity<T:Bundle>(&mut self, components:T) {
+  /// Create a new entity with the provided components.
+  pub fn spawn_entity<B:Bundle>(&mut self, components:B) {
     let insert_info = InsertInfo {
       entity:None,
       components:NoDropTuple::new(components)
@@ -20,15 +21,19 @@ impl CommandBuffer {
     self.0.push(Command::InsertOrSpawn(insert_info))
   }
 
+  /// Delete the specified entity.
   pub fn delete_entity(&mut self, entity:Entity) {
     self.0.push(Command::DeleteEntity(entity));
   }
 
+  /// Add a commponent to the specified entity.
   pub fn insert_component<T:EcsData>(&mut self, entity:Entity, component:T) {
     self.insert_components(entity, (component,));
   }
 
-  pub fn insert_components<T:Bundle>(&mut self, entity:Entity, components:T) {
+  /// Add commponents to the specified entity. To insert one
+  /// component see [`Self::insert_component`].
+  pub fn insert_components<B:Bundle>(&mut self, entity:Entity, components:B) {
     let insert_info = InsertInfo {
       entity:Some(entity),
       components:NoDropTuple::new(components)
@@ -43,12 +48,13 @@ impl CommandBuffer {
 
   /// Removes the components specified by the generic parameter.
   ///
-  /// Enter Components as a [`Bundle`].
+  /// Enter components as a [`Bundle`] i.e. `(A,B,C)`.
   pub fn remove_components<T:Bundle>(&mut self, entity:Entity) {
     let remove_info = RemoveInfo { entity, tys:T::types() };
     self.0.push(Command::RemoveComponent(remove_info))
   }
 
+  /// Execute the buffered commands.
   pub fn run(&mut self, world:&mut World) {
     for cmd in &self.0 {
       match cmd {
@@ -72,8 +78,10 @@ impl CommandBuffer {
     }
   }
 
-  /// Removes all commands from the [`CommandBuffer`].
-  pub fn clear(&mut self) {}
+  /// Remove all commands from the [`CommandBuffer`].
+  pub fn clear(&mut self) {
+    *self = CommandBuffer::new();
+  }
 }
 
 /// A buffered command
@@ -101,7 +109,7 @@ mod tests {
   // somehow the pointer to the string it tries to drop is incorrect (zero) unsure
   // how that happens as I believe it should invalidate other operations too...
   // only happens for vecs
-
+  // Seems to only happen on dropping the world according to the backtrace.
   #[test]
   fn insert_into_entities() {
     let mut world = World::new();

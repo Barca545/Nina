@@ -39,20 +39,20 @@ macro_rules! impl_tuple {
       // }
       #[allow(unused_variables, unused_mut)]
       unsafe fn put(self, mut f: impl FnMut(*mut u8, TypeInfo) -> Result<()>) -> Result<()>{
-      #[allow(non_snake_case)]
-      let ($($name,)*) = self;
-      $(
         #[allow(non_snake_case)]
-        let mut $name = mem::ManuallyDrop::new($name);
-      )*
-      $(
-        f(
-          (&mut *$name as *mut $name).cast::<u8>(),
-          TypeInfo::of::<$name>(),
-        )?;
-      )*
-      Ok(())
-    }
+        let ($($name,)*) = self;
+        $(
+          #[allow(non_snake_case)]
+          let mut $name = mem::ManuallyDrop::new($name);
+        )*
+        $(
+          f(
+            (&mut *$name as *mut $name).cast::<u8>(),
+            TypeInfo::of::<$name>(),
+          )?;
+        )*
+        Ok(())
+      }
 
       #[allow(unused_variables, unused_mut)]
       fn types()->Vec<TypeInfo>{

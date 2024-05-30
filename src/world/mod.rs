@@ -40,13 +40,13 @@ impl World {
     }
   }
 
-  ///Add a new resource to the world.
+  /// Add a new resource to the world.
   pub fn add_resource(&mut self, data:impl EcsData) -> &mut Self {
     self.resources.add_resource(data);
     self
   }
 
-  ///Query a resource by type and get a reference.
+  /// Query a resource by type and get a reference.
   ///
   /// # Panics
   ///
@@ -55,7 +55,7 @@ impl World {
     self.resources.get::<T>()
   }
 
-  ///Query a resource by type and get a mutable reference.
+  /// Query a resource by type and get a mutable reference.
   ///
   /// # Panics
   ///
@@ -64,7 +64,7 @@ impl World {
     self.resources.get_mut::<T>()
   }
 
-  ///Remove a resource from the [`World`].
+  /// Remove a resource from the [`World`].
   pub fn remove_resource<T:EcsData>(&mut self) {
     self.resources.remove::<T>()
   }
@@ -85,8 +85,7 @@ impl World {
   /// The entity is initalized without any associated components.
   ///
   /// # Warning
-  ///
-  /// A component must be added to an entity.
+  /// - A component must be added to an entity.
   pub fn create_entity(&mut self) -> &mut Self {
     self.entities.create_entity();
     self
@@ -116,7 +115,7 @@ impl World {
   /// # Panics
   ///
   /// Panics if `T` has not been registered.
-  pub fn with_components<T:Bundle>(&mut self, bundle:T) -> Result<()> {
+  pub fn with_components<B:Bundle>(&mut self, bundle:B) -> Result<()> {
     self.entities.with_components(bundle)
   }
 
@@ -131,15 +130,14 @@ impl World {
   }
 
   /// Add a [`Bundle`] of components to the entity.
-  pub fn add_components<T:Bundle>(&mut self, entity:Entity, components:T) -> Result<()> {
+  pub fn add_components<B:Bundle>(&mut self, entity:Entity, components:B) -> Result<()> {
     self.entities.add_components(entity, components)
   }
 
   /// Returns the component from the queried entity.
   ///
   /// # Panics
-  ///
-  /// Panics if the entity does not have the requested component.
+  /// - Panics if the entity does not have the requested component.
   pub fn get_component<T:EcsData>(&self, entity:Entity) -> Result<&T> {
     let ty = TypeInfo::of::<T>();
     if self.entities.has_component::<T>(entity)? {
@@ -159,9 +157,7 @@ impl World {
   /// Mutably returns the component from the queried entity.
   ///
   /// # Panics
-  ///
   /// - Panics if the entity does not have the requested component.
-  ///
   /// - Panics if the component is already borrowed in scope.
   pub fn get_component_mut<T:EcsData>(&self, entity:Entity) -> Result<&mut T> {
     let ty = TypeInfo::of::<T>();
@@ -198,14 +194,14 @@ impl World {
   }
 }
 
-//Query implementation
+// Query implementation
 impl World {
   pub fn query(&self) -> Query {
     Query::new(&self.entities)
   }
 }
 
-//CommandBuffer implementation
+// CommandBuffer implementation
 impl World {
   pub fn command_buffer(&self) {}
 }

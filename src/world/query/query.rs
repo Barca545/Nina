@@ -6,7 +6,6 @@ use crate::{
 };
 use eyre::Result;
 
-// #[derive(Debug)]
 pub struct Query<'a> {
   map:u128,
   exclude_map:u128,
@@ -14,7 +13,7 @@ pub struct Query<'a> {
 }
 
 impl<'a> Query<'a> {
-  ///Create a new [`Query`].
+  /// Create a new [`Query`].
   pub fn new(entities:&'a Entities) -> Self {
     Self {
       map:0,
@@ -23,7 +22,7 @@ impl<'a> Query<'a> {
     }
   }
 
-  ///Register a component the queried entities must hold.
+  /// Register a component the queried entities must hold.
   pub fn with_component<T:EcsData>(&mut self) -> Result<&mut Self> {
     let ty = TypeInfo::of::<T>();
     if let Some(bit_mask) = self.entities.get_bitmask(&ty) {
@@ -34,7 +33,7 @@ impl<'a> Query<'a> {
     Ok(self)
   }
 
-  ///Register a component the queried entities must not hold.
+  /// Register a component the queried entities must **not** hold.
   pub fn without_component<T:EcsData>(&mut self) -> Result<&mut Self> {
     let ty = TypeInfo::of::<T>();
     if let Some(bit_mask) = self.entities.get_bitmask(&ty) {
@@ -45,7 +44,7 @@ impl<'a> Query<'a> {
     Ok(self)
   }
 
-  ///Consumes the [`Query`]. Returns a [`Vec`] of [`QueryEntity`] containing
+  /// Consumes the [`Query`]. Returns a [`Vec`] of [`QueryEntity`] containing
   /// all entities who hold the queried components.
   pub fn run(&self) -> Vec<QueryEntity> {
     self

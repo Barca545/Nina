@@ -5,7 +5,8 @@ use crate::{
 };
 use eyre::Result;
 
-/// Structure which references an entity located by a `Query`.
+/// Structure which references an entity located by a
+/// [`Query`](super::query::Query).
 pub struct QueryEntity<'a> {
   pub id:usize,
   entities:&'a Entities
@@ -19,8 +20,7 @@ impl<'a> QueryEntity<'a> {
   /// Fetches a component of type `T` from a queried entity.
   ///
   /// # Panics
-  ///
-  /// Panics if the entity does not have the component.
+  /// - Panics if the entity does not have the component.
   pub fn get_component<T:EcsData>(&self) -> Result<&T> {
     let ty = TypeInfo::of::<T>();
     let entities = self.entities;
@@ -44,8 +44,7 @@ impl<'a> QueryEntity<'a> {
   /// Mutably fetches a component of type `T` from a queried entity.
   ///
   /// # Panics
-  ///
-  /// Panics if the entity does not have the component.
+  /// - Panics if the entity does not have the component.
   pub fn get_component_mut<T:EcsData>(&self) -> Result<&mut T> {
     let ty = TypeInfo::of::<T>();
     let entities = self.entities;

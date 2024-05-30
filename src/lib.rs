@@ -25,13 +25,10 @@
 #![allow(dead_code)]
 
 mod errors;
-
 pub mod storage;
 pub mod world;
 
 // Refactor
 // -Fix the crate imports
 // -I think it's worth moving Arena into storage
-
-// To Do
-// -Add command buffer
+// -Update the documentation example

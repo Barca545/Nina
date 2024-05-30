@@ -9,6 +9,8 @@ use std::{
 // Refactor:
 // -No `pop` method. Unsure it is needed.
 // -No `remove` method. Unsure it is needed.
+// -Split this into multiple modules.
+// -Redo the Box, it doesn't need to used the RawErasedVec
 
 struct RawErasedVec {
   ty:TypeInfo,
@@ -84,6 +86,8 @@ impl Drop for RawErasedVec {
 ///A type erased vector used for storing data in the ECS.
 pub struct ErasedVec {
   buf:RawErasedVec,
+  ///Tracks with indices in an `ErasedVec` are filled. Useful for drop logic.
+  filled:Vec<bool>,
   len:usize
 }
 
@@ -94,6 +98,7 @@ impl ErasedVec {
   pub fn new<T:'static>() -> Self {
     ErasedVec {
       buf:RawErasedVec::new::<T>(),
+      filled:Vec::new(),
       len:0
     }
   }
@@ -201,7 +206,11 @@ impl ErasedVec {
     padding.resize(self.ty().size(), 0);
     let padding = padding.as_mut_ptr();
 
-    self.push_erased(padding, self.ty())
+    let len = self.len();
+
+    self.push_erased(padding, self.ty());
+    // Mark the array as not filled
+    self.filled[len] = false;
   }
 
   ///Append a value to the back of the [`ErasedVec`].
@@ -225,6 +234,7 @@ impl ErasedVec {
 
     mem::forget(value);
 
+    self.filled.push(true);
     self.len += 1;
   }
 
@@ -253,6 +263,7 @@ impl ErasedVec {
       ptr::copy_nonoverlapping(val_ptr, self.ptr().add(offset), self.ty().size());
     }
 
+    self.filled.push(true);
     self.len += 1;
   }
 
@@ -281,6 +292,7 @@ impl ErasedVec {
       ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().size());
     }
 
+    self.filled.insert(index, true);
     self.len += 1;
   }
 
@@ -316,6 +328,7 @@ impl ErasedVec {
       ptr::copy_nonoverlapping(val_ptr, self.ptr().add(start_offset), self.ty().size());
     }
 
+    self.filled.insert(index, true);
     self.len += 1;
   }
 
@@ -370,6 +383,8 @@ impl ErasedVec {
       // Copy the value as raw bits into the `ErasedVec`
       ptr::copy_nonoverlapping(ptr, self.indexed_ptr(index), self.ty().size());
     }
+
+    self.filled[index] = true;
   }
 
   /// Sets the `index` within the vector.
@@ -419,7 +434,9 @@ impl ErasedVec {
 impl Drop for ErasedVec {
   fn drop(&mut self) {
     for index in 0..self.len {
-      unsafe { self.ty().drop(self.indexed_ptr(index)) }
+      if self.filled[index] {
+        unsafe { self.ty().drop(self.indexed_ptr(index)) }
+      }
     }
   }
 }
@@ -524,14 +541,14 @@ pub struct NoDropTuple {
 }
 
 impl NoDropTuple {
-  pub fn new<T:Bundle>(tuple:T) -> Self {
+  pub fn new<B:Bundle>(tuple:B) -> Self {
     // Create the "tuple"
     let mut no_drop = NoDropTuple {
       buf:NonNull::dangling(),
       layout:unsafe { Layout::from_size_align_unchecked(0, 2) },
-      tys:T::types(),
+      tys:B::types(),
       field_size:0,
-      len:T::LENGTH
+      len:B::LENGTH
     };
 
     // Size of the `NoDropTuple`'s largest element

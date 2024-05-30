@@ -83,7 +83,7 @@ impl EntitiesInner {
   ///
   /// # Panics
   /// - Panics if `T` has not been registered.
-  pub fn with_components<T:Bundle>(&mut self, components:T) -> Result<()> {
+  pub fn with_components<B:Bundle>(&mut self, components:B) -> Result<()> {
     unsafe {
       components.put(|ptr, ty| {
         let entity = self.inserting_into_index;
@@ -145,8 +145,16 @@ impl EntitiesInner {
   /// # Panics
   /// - Panics if `T` has not been registered.
   pub fn add_component_erased(&mut self, entity:Entity, ty:TypeInfo, ptr:*mut u8) -> Result<()> {
+    let has_component = self.has_component_erased(entity, &ty)?;
     if let Some(components) = self.components.get_mut(&ty) {
-      components.set_erased(entity, ty, ptr);
+      // If it has the component reset the slot
+      if has_component {
+        components.reset_erased(entity, ty, ptr);
+      }
+      // Otherwise set the slot
+      else {
+        components.set_erased(entity, ty, ptr);
+      }
 
       let bitmask = self.bitmasks.get(&ty).unwrap();
       self.map[entity] |= *bitmask;
@@ -160,11 +168,19 @@ impl EntitiesInner {
   ///
   /// # Panics
   /// - Panics if a component's type has not been registered.
-  pub fn add_components<T:Bundle>(&mut self, entity:Entity, components:T) -> Result<()> {
+  pub fn add_components<B:Bundle>(&mut self, entity:Entity, components:B) -> Result<()> {
     unsafe {
       components.put(|ptr, ty| {
+        let has_component = self.has_component_erased(entity, &ty)?;
         if let Some(components) = self.components.get_mut(&ty) {
-          components.reset_erased(entity, ty, ptr);
+          // If it has the component reset the slot
+          if has_component {
+            components.reset_erased(entity, ty, ptr);
+          }
+          // Otherwise set the slot
+          else {
+            components.set_erased(entity, ty, ptr);
+          }
 
           let bitmask = self.bitmasks.get(&ty).unwrap();
           self.map[entity] |= *bitmask;
@@ -203,6 +219,17 @@ impl EntitiesInner {
   pub fn has_component<T:EcsData>(&self, entity:Entity) -> Result<bool> {
     let ty = TypeInfo::of::<T>();
 
+    match self.get_bitmask(&ty) {
+      Some(mask) => Ok((self.map[entity] & mask) != 0),
+      None => Err(EcsErrors::ComponentNotRegistered.into())
+    }
+  }
+
+  ///Checks whether an entity has a component and returns a [`Result<bool>`].
+  ///
+  /// # Panics
+  /// - Panics if the component was never registered;
+  pub fn has_component_erased(&self, entity:Entity, ty:&TypeInfo) -> Result<bool> {
     match self.get_bitmask(&ty) {
       Some(mask) => Ok((self.map[entity] & mask) != 0),
       None => Err(EcsErrors::ComponentNotRegistered.into())

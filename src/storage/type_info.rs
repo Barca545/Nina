@@ -16,11 +16,13 @@ use std::{
 
 #[derive(Debug, Copy, Clone)]
 /// Metadata required to store a component.
-///
-/// All told, this means a [`TypeId`], to be able to dynamically name/check the
-/// component type; a [`Layout`], so that we know how to allocate memory for
-/// this component type; and a drop function which internally calls
-/// [`core::ptr::drop_in_place`] with the correct type parameter.
+/// - A [`TypeId`], to be able to dynamically name/check the
+/// component type.
+/// - A [`Layout`], so that we know how to allocate memory for
+/// this component type.
+/// - A drop function which internally calls
+///   [`ptr::drop_in_place`](core::ptr::drop_in_place) with the correct type
+///   parameter.
 pub struct TypeInfo {
   id:TypeId,
   layout:Layout,
@@ -31,7 +33,9 @@ pub struct TypeInfo {
 impl TypeInfo {
   pub fn of<T:'static>() -> Self {
     unsafe fn drop_ptr<T>(x:*mut u8) {
-      x.cast::<T>().drop_in_place()
+      if x as usize != 0 {
+        x.cast::<T>().drop_in_place()
+      }
     }
 
     let layout = Layout::new::<T>();
@@ -68,7 +72,7 @@ impl TypeInfo {
   ///Creates a [`Layout`] describing the record for a [T; n] where T is the
   /// type described by a [`TypeInfo`].
   ///
-  ///On arithmetic overflow or when the total size would exceed isize::MAX,
+  /// On arithmetic overflow or when the total size would exceed isize::MAX,
   /// returns LayoutError.
   ///
   ///Type-erased implementation of [`Layout`]'s [array method](https://doc.rust-lang.org/src/core/alloc/layout.rs.html#433).
@@ -97,10 +101,9 @@ impl TypeInfo {
   /// Directly call the destructor on a pointer to data of this component type.
   ///
   /// # Safety
-  ///
-  /// All of the caveats of [`core::ptr::drop_in_place`] apply, with the
-  /// additional requirement that this method is being called on a pointer to
-  /// an object of the correct component type.
+  /// - All of the caveats of [`ptr::drop_in_place`](core::ptr::drop_in_place)
+  ///   apply, with the additional requirement that this method is being called
+  ///   on a pointer to an object of the correct component type.
   pub unsafe fn drop(&self, data:*mut u8) {
     (self.drop)(data)
   }

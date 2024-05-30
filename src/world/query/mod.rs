@@ -1,2 +1,2 @@
-pub(crate) mod query;
-mod query_entity;
+pub mod query;
+pub mod query_entity;

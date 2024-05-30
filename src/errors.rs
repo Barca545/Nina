@@ -1,5 +1,9 @@
 use thiserror::Error;
 
+// Refactor:
+// -Should CreateComponentNeverCalled and ComponentNotRegistered be merged? If
+// not ensure ComponentNotRegistered also shows the component type.
+
 #[derive(Error, Debug)]
 pub enum TypeInfoErrors {
   #[error("invalid parameters to Layout::from_size_align")]
@@ -19,9 +23,6 @@ pub enum ErasedVecErrors {
   #[error("Capacity overflow")]
   ErasedVecCapacityOverflow
 }
-
-// Refactor:
-// -Should CreateComponentNeverCalled and ComponentNotRegistered be different?
 
 #[derive(Debug, Error)]
 pub enum EcsErrors {
